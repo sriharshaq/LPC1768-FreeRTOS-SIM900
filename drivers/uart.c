@@ -290,14 +290,14 @@
 			char i = 0;
 			while(c != LF)
 			{
-				if(uart1_fifo.num_bytes > 0){
-					c = uart1_getc();
-					memcpy(&uart1_fifo.line[i], c, 1);
+				if(uart0_fifo.num_bytes > 0){
+					c = uart0_getc();
+					uart0_fifo.line[i] = c;
 					i++;
 				}
 			}
 			c = '\0';
-			memcpy(&uart1_fifo.line[i], c, 1);
+			uart0_fifo.line[i] = c;
 			return i;
 		}
 
@@ -474,14 +474,14 @@
 			char i = 0;
 			while(c != LF)
 			{
-				if(uart2_fifo.num_bytes > 0){
-					c = uart2_getc();
-					memcpy(&uart2_fifo.line[i], c, 1);
+				if(uart0_fifo.num_bytes > 0){
+					c = uart0_getc();
+					uart0_fifo.line[i] = c;
 					i++;
 				}
 			}
 			c = '\0';
-			memcpy(&uart2_fifo.line[i], c, 1);
+			uart0_fifo.line[i] = c;
 			return i;
 		}
 

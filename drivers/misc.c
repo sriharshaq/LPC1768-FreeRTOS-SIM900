@@ -20,3 +20,21 @@ uint8_t isblankstr(char * str, uint16_t len)
 		return 0;			// not blank
 }
 
+/* debug print */
+void debug_out(char * ptr)
+{
+	for(uint8_t i = 0;ptr[i] != '\0';i++)
+	{
+		uart0_putc(ptr[i]);
+	}
+}
+
+/* modem print */
+void modem_out(char * ptr)
+{
+	for(uint8_t i = 0;ptr[i] != '\0';i++)
+	{
+		uart3_putc(ptr[i]);
+	}
+}
+

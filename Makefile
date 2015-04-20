@@ -40,7 +40,7 @@ VPATH = device: \
 
 # Object Files
 OBJS	=	main.o \
-			uart.o misc.o \
+			uart.o misc.o lcd.o delay.o gsm.o \
 			jsmn.o \
 			list.o queue.o tasks.o timers.o port.o heap_2.o \
 			lpc17xx.o system_LPC17xx.o \
@@ -249,6 +249,15 @@ uart.o: uart.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
 
 misc.o: misc.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+lcd.o: lcd.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+delay.o: delay.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+gsm.o: gsm.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
 ########################################################################
 

@@ -6,14 +6,14 @@
 
 /******* Enable/Disable uarts     */
 #define __UART0_ENABLED
-//#define __UART1_ENABLED
+#define __UART1_ENABLED
 //#define __UART2_ENABLED
 #define __UART3_ENABLED
 /**********************************/
 
 /******* Enable/Disable interrupts */
 #define UART0_INTERRUPT_ENABLED
-//#define UART1_INTERRUPT_ENABLED
+#define UART1_INTERRUPT_ENABLED
 //#define UART2_INTERRUPT_ENABLED
 #define UART3_INTERRUPT_ENABLED
 /**********************************/
