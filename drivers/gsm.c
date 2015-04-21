@@ -21,6 +21,8 @@ void gsm_allocate_mem(void)
 	/* allocate memory */
 	modem.ipstate = (char *) malloc(32);
 	modem.apn = (char *) malloc(64);
+	modem.opr = (char *) malloc(64);
+	modem.ip = (char *) malloc(32);
 }
 
 /*
@@ -864,5 +866,377 @@ uint8_t gsm_get_apn(void)
 		#endif
 	}
 
+	return flag;
+}
+
+
+uint8_t gsm_get_opr_name(void)
+{
+	uint16_t len, resp;
+	uint8_t flag = 0;
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("sending 'AT+COPS?'\r\n");
+	#endif
+
+	// send 'AT+CSQ'
+	modem_out("AT+COPS?\r");
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("'AT+COPS?' sent\r\n");
+		debug_out("reading 1st line\r\n");
+	#endif
+
+	// Expected first line is blank
+	len = uart3_readline();
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 1st line\r\n");
+		debug_out("processing line, expected is blank\r\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	// check whether blank line
+	if(resp == __LINE_BLANK)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __BLANK line\r\n");
+		#endif
+	}
+
+	// else display error
+	// TODO: retry before going to further step
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("error expected is __BLANK, but got something else\r\n");
+			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("reading 2nd line\r\n");
+	#endif
+
+	// read 2nd line
+	len = uart3_readline();
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 2nd line\r\n");
+		debug_out("processing line, expected is __OTHER line\r\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	if(resp == __LINE_DATA)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __DATA line\r\n");
+		#endif
+
+		char * __index = memchr(uart3_fifo.line, '"', len);
+
+		// to remove :<space>'"' "
+		__index += 1;
+
+		// To remove '"'' "
+		//__comma -= 1;
+
+		uint8_t _index_len = strlen(__index);
+
+		memcpy(modem.opr, __index , _index_len - 3);
+
+		
+		//+COPS: 0,0,"T24"
+		// address_start: after 2 from : total_len - len_after_comma
+
+	}
+
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("error expected is __DATA, but got something else\r\n");
+			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("reading 3rd line\r\n");
+	#endif
+
+	// read 3rd line it should be blank
+	len = uart3_readline();
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 3rd line\r\n");
+		debug_out("processing line, expected is blank\r\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	// check whether blank line
+	if(resp == __LINE_BLANK)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __BLANK line\r\n");
+		#endif
+	}
+
+	// else display error
+	// TODO: retry before going to further step
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("error expected is __BLANK, but got something else\r\n");
+			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("reading 4th line\r\n");
+	#endif
+
+	// read 4th line it should be OK
+	len = uart3_readline();
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 4th line\r\n");
+		debug_out("processing line, expected is OKr\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	// check whether OK line
+	if(resp == __LINE_OTHER)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __OTHER line\r\n");
+			debug_out("searching for 'OK'\r\n");
+		#endif
+		if(strstr(uart3_fifo.line, "OK"))
+		{
+			#if APPLICATION_LOG_LEVEL == 1
+				debug_out("found ok\r\n");
+				debug_out("'AT+CSTT?' 'OK' success\r\n");
+			#endif
+			flag = 1;
+		}
+		else
+		{
+			#if APPLICATION_LOG_LEVEL == 1
+				debug_out("'OK' not found\r\n");
+				sprintf(debug_buff, "line: %s", uart3_fifo.line);
+				debug_out(debug_buff);
+			#endif
+		}
+	}
+
+	// else display error
+	// TODO: retry before going to further step
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("error expected is __OTHER, but got something else\r\n");
+			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+
+	return flag;
+}
+
+uint8_t gsm_bring_wireless_up(void)
+{
+	uint16_t len, resp;
+	uint8_t flag = 0;
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("sending 'AT+CIICR'\r\n");
+	#endif
+
+	// send 'AT'
+	modem_out("AT+CIICR\r");
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("'AT+CIICR' sent\r\n");
+		debug_out("reading 1st line\r\n");
+	#endif
+
+	// Expected first line is blank
+	len = uart3_readline();
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 1st line\r\n");
+		debug_out("processing line, expected is blank\r\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	// check whether blank line
+	if(resp == __LINE_BLANK)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __BLANK line\r\n");
+		#endif
+	}
+
+	// else display error
+	// TODO: retry before going to further step
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("error expected is __BLANK, but got something else\r\n");
+			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("reading 2nd line\r\n");
+	#endif
+
+	// read 2nd line
+	len = uart3_readline();
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 2nd line\r\n");
+		debug_out("processing line, expected is __OTHER line\r\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	if(resp == __LINE_OTHER)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __OTHER line\r\n");
+			debug_out("searching for 'OK'\r\n");
+		#endif
+		if(strstr(uart3_fifo.line, "OK"))
+		{
+			#if APPLICATION_LOG_LEVEL == 1
+				debug_out("found ok\r\n");
+				debug_out("'AT' 'OK' success\r\n");
+			#endif
+			// SUCCESS
+			flag = 1;
+		}
+		else
+		{
+			#if APPLICATION_LOG_LEVEL == 1
+				debug_out("error expected is __OTHER, but got something else\r\n");
+				sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+				debug_out(debug_buff);
+			#endif
+		}
+	}
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("'OK' not found\r\n");
+			sprintf(debug_buff, "line: %s", uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+	// FAIL
+	return flag;
+}
+
+uint8_t gsm_get_ipaddr(void)
+{
+	uint16_t len, resp;
+	uint8_t flag = 0;
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("sending 'AT+CIFSR'\r\n");
+	#endif
+
+	// send 'AT'
+	modem_out("AT+CIFSR\r");
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("'AT+CIFSR' sent\r\n");
+		debug_out("reading 1st line\r\n");
+	#endif
+
+	// Expected first line is blank
+	len = uart3_readline();
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 1st line\r\n");
+		debug_out("processing line, expected is blank\r\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	// check whether blank line
+	if(resp == __LINE_BLANK)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __BLANK line\r\n");
+		#endif
+	}
+
+	// else display error
+	// TODO: retry before going to further step
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("error expected is __BLANK, but got something else\r\n");
+			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("reading 2nd line\r\n");
+	#endif
+
+	// read 2nd line
+	len = uart3_readline();
+
+	#if APPLICATION_LOG_LEVEL == 1
+		debug_out("read 2nd line\r\n");
+		debug_out("processing line, expected is __OTHER line\r\n");
+	#endif
+
+	resp = process_response(uart3_fifo.line,len);
+
+	if(resp == __LINE_OTHER)
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("got __OTHER line\r\n");
+			debug_out("searching for ip\r\n");
+		#endif
+		if(strstr(uart3_fifo.line, "ERROR"))
+		{
+			#if APPLICATION_LOG_LEVEL == 1
+				debug_out("ip not found error\r\n");
+			#endif	
+		}
+		else
+		{
+			#if APPLICATION_LOG_LEVEL == 1
+				debug_out("ip found error\r\n");
+			#endif
+			strcpy(modem.ip, uart3_fifo.line);
+			flag = 1;
+		}
+
+	}
+	else
+	{
+		#if APPLICATION_LOG_LEVEL == 1
+			debug_out("error expected is __OTHER, but got something else\r\n");
+			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
+			debug_out(debug_buff);
+		#endif
+	}
+	// FAIL
 	return flag;
 }

@@ -11,6 +11,8 @@ typedef struct
 {
 	char * ipstate;
 	char * apn;
+	char * opr;
+	char * ip;
 	uint8_t rssi;
 }Modem_Type_t;
 
@@ -25,16 +27,35 @@ extern uint8_t	gsm_set_apn(char *);
 extern uint8_t	gsm_get_apn(void);
 
 extern uint8_t	gsm_get_opr_name(void);
+extern uint8_t	gsm_get_ipaddr(void);
 
-extern void 	gsm_tcp_start(void);
-extern void     gsm_bring_wireless_up(void);
+extern void 	gsm_tcp_start(char *, char *);
+extern uint8_t  gsm_bring_wireless_up(void);
 
 
-/* get apn
+/* AT+CSTT
 
 +CSTT: "TATA.DOCOMO.INTERNET","",""
 
 OK
+*/
+
+/* AT+COPS?
+
++COPS: 0,0,"T24"
+
+OK
+*/
+
+/* AT+CIFSR
+
+100.106.186.61
+*/
+
+/* TCP Start
+OK
+
+CONNECT OK
 */
 
 

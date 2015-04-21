@@ -273,11 +273,13 @@ static void monModem(void * pvParameters)
 		// Wait for resource
 		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
 		{
+			// ping modem
 			if(gsm_ping_modem())
 			{
 				debug_out("ping ok\r\n");
 			}
 
+			// update apn
 			if(gsm_set_apn("TATA.DOCOMO.INTERNET"))
 			{
 				debug_out("apn ok\r\n");
@@ -301,6 +303,8 @@ static void establishGPRS(void * pvParameters)
 		// Wait for resource
 		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
 		{
+
+			// query ipstatus
 			uint8_t state = gsm_update_ipstatus();
 			if(state)
 			{
@@ -316,6 +320,7 @@ static void establishGPRS(void * pvParameters)
 				}	
 			}
 
+			// query rssi
 			state = gsm_update_rssi();
 			if(state)
 			{
@@ -332,13 +337,42 @@ static void establishGPRS(void * pvParameters)
 				}	
 			}
 
+			// query apn
 			state = gsm_get_apn();
-
 			if(state)
 			{
 				debug_out(modem.apn);
 				debug_out("\r\n");
 			}
+
+			state = gsm_get_opr_name();
+			if(state)
+			{
+				debug_out(modem.opr);
+				debug_out("\r\n");
+			}
+
+			state = gsm_bring_wireless_up();
+			if(state)
+			{
+				debug_out("ciicr success\r\n");
+			}
+			else
+			{
+				debug_out("ciicr fail\r\n");
+			}
+
+			state = gsm_get_ipaddr();
+			if(state)
+			{
+				debug_out("gsm_get_ipaddr success\r\n");
+				debug_out(modem.ip);
+			}
+			else
+			{
+				debug_out("gsm_get_ipaddr fail\r\n");
+			}
+
 			xSemaphoreGive( modemUARTSemaphore );
 		}
 		vTaskDelay(500);

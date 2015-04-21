@@ -95,8 +95,12 @@ void lcd_init(void)
 
 void lcd_print(uint8_t * buff)
 {
-	for(;* buff != '\0';lcd_write_character_4d(* buff++))
+	for(uint8_t i = 0;buff[i] != '\0';i++)
 	{
-		_delay_us(80);
+		if( (buff[i] != '\r') && (buff[i] != '\n') ){
+			lcd_write_character_4d(buff[i]);
+			_delay_us(80);
+		}
+		
 	}
 }
