@@ -101,7 +101,7 @@ typedef struct
 
 #ifdef __UART3_ENABLED
 	#ifdef 	UART3_INTERRUPT_ENABLED
-		#define UART3_RX_FIFO_SIZE			1024
+		#define UART3_RX_FIFO_SIZE			(1024 * 4)
 		#define UART3_LINE_SIZE				512
 
 		extern 	UART_RING_BUFFER 			uart3_fifo;
