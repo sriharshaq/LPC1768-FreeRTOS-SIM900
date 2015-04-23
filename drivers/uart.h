@@ -41,6 +41,7 @@
 
 
 #define LF '\n'
+#define CR '\r'
 
 /* UART RING BUFFER STRUCTURE */
 typedef struct
@@ -75,8 +76,8 @@ typedef struct
 
 #ifdef __UART1_ENABLED
 	#ifdef 	UART1_INTERRUPT_ENABLED
-		#define UART1_RX_FIFO_SIZE			1024
-		#define UART1_LINE_SIZE				512
+		#define UART1_RX_FIFO_SIZE			128
+		#define UART1_LINE_SIZE				64
 
 		extern 	UART_RING_BUFFER 			uart1_fifo;
 		extern void 						uart1_init(uint32_t);

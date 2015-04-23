@@ -25,7 +25,7 @@ void debug_out(char * ptr)
 {
 	for(uint8_t i = 0;ptr[i] != '\0';i++)
 	{
-		uart0_putc(ptr[i]);
+		uart1_putc(ptr[i]);
 	}
 }
 
@@ -35,6 +35,14 @@ void modem_out(char * ptr)
 	for(uint8_t i = 0;ptr[i] != '\0';i++)
 	{
 		uart3_putc(ptr[i]);
+	}
+}
+
+void zigbee_out(char * ptr)
+{
+	for(uint8_t i = 0;ptr[i] != '\0';i++)
+	{
+		uart0_putc(ptr[i]);
 	}
 }
 

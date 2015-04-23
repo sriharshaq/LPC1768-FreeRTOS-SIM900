@@ -1521,7 +1521,7 @@ uint8_t gsm_tcp_send(void)
 		if(uart3_fifo.num_bytes > 0)
 		{
 			c = uart3_getc();
-			uart0_putc(c);
+			//uart0_putc(c);
 		}
 	}
 	while(c != '>');

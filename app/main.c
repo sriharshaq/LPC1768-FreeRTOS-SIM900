@@ -85,8 +85,28 @@ int main(void)
 			tskIDLE_PRIORITY,
 			&bootTaskHandle);
 
+			// xTaskCreate(monZigbee,
+			// 		(signed portCHAR *)"zigbee",
+			// 		configMINIMAL_STACK_SIZE,
+			// 		NULL,
+			// 		tskIDLE_PRIORITY,
+			// 		&monZigbeeHandle);	
+
+	//debug_out("system started\r\n");
+
 	/* Start the scheduler */
 	vTaskStartScheduler();
+
+	// while(1)
+	// {
+	// 	zigbee_out("+++");
+	// 	uart0_readline();
+	// 	debug_out(uart0_fifo.line);
+	// 	zigbee_out("ATCN\r");
+	// 	uart0_readline();
+	// 	debug_out(uart0_fifo.line);
+	// 	_delay_ms(1000);
+	//}
 
 	/* Never reach here */
 	return 0;
@@ -134,12 +154,13 @@ void prvSetupHardware(void)
 	db.s_val 		= (char *) malloc(10);*/
 
 	LPC_GPIO1->FIODIR |= (1 << 19);
-	LPC_GPIO1->FIODIR |= (1 << 20);
+	LPC_GPIO1->FIODIR |= (1 << 22);
 	LPC_GPIO1->FIODIR |= (1 << 21);
 
 	LPC_GPIO1->FIOSET |= (1 << 19);
-	LPC_GPIO1->FIOSET |= (1 << 20);
+	LPC_GPIO1->FIOSET |= (1 << 22);
 	LPC_GPIO1->FIOSET |= (1 << 21);
+
 }
 
 
@@ -416,31 +437,81 @@ static void display(void * pvParameters)
 			else if(count == 2)
 			{
 				lcd_write_instruction_4d(0x80);
-				lcd_print("SIGNAL STRENGTH ");
+				lcd_print(" Operator          ");
 				lcd_write_instruction_4d(0xC0);
-				if(modem.rssi >= 2 && modem.rssi <= 9)
-				{
-					lcd_print("  Marginal          ");
+				lcd_print(modem.opr);
+				lcd_print("                 ");
+				count = 3;
+			}
+			else if(count == 3)
+			{
+				lcd_write_instruction_4d(0x80);
+				lcd_print(" APN              ");
+				lcd_write_instruction_4d(0xC0);
+				lcd_print(modem.apn);
+				lcd_print("                 ");
+				count = 4;
+			}
+			else if(count == 4)
+			{
+				lcd_write_instruction_4d(0x80);
+				lcd_print("RSSI             ");
+				lcd_write_instruction_4d(0xC0);
+				sprintf(buff, "%d", modem.rssi);
+				lcd_print(" ");
+				lcd_print(buff);
+				lcd_print("                 ");
+				count = 5;
+			}
+			else if(count == 5)
+			{
+				lcd_write_instruction_4d(0x80);
+				lcd_print("  DEVICE A      ");
+				lcd_write_instruction_4d(0xC0);
+
+				if(db0.d_state == 1){
+					lcd_print("ON");
 				}
-				else if(modem.rssi >= 10 && modem.rssi <= 14)
-				{
-					lcd_print("  OK                ");
+				else{
+					lcd_print("OFF");
 				}
-				else if(modem.rssi >= 15 && modem.rssi <= 19)
-				{
-					lcd_print("  Good             ");
+				lcd_print("               ");
+
+				count = 6;
+			}
+			else if(count == 6)
+			{
+				lcd_write_instruction_4d(0x80);
+				lcd_print("  DEVICE B      ");
+				lcd_write_instruction_4d(0xC0);
+
+				if(db1.d_state == 1){
+					lcd_print("ON");
 				}
-				else if(modem.rssi >= 20 && modem.rssi <= 30)
-				{
-					lcd_print("  Excellent         ");
+				else{
+					lcd_print("OFF");
 				}
-				else
-					lcd_print("  Error             ");
+				lcd_print("               ");
+				count = 7;
+			}
+			else if(count == 7)
+			{
+				lcd_write_instruction_4d(0x80);
+				lcd_print("  DEVICE C      ");
+				lcd_write_instruction_4d(0xC0);
+
+				if(db2.d_state == 1){
+					lcd_print("ON");
+				}
+				else{
+					lcd_print("OFF");
+				}
+				lcd_print("               ");
 				count = 0;
 			}	
 			xSemaphoreGive(lcdSemaphore);
 		}		
-		vTaskDelay(5000);
+		vTaskDelay(2000);
 	}
 	/*
 			------- RSSI ----------
@@ -476,35 +547,90 @@ static void display(void * pvParameters)
 */
 }
 
+char * __Addresses[] = {"40DC8B6D", "40BF8CAD", "40DC8B76"};
+
+void setAddress(char * addr)
+{
+	zigbee_out("+++");
+	uart0_readline();
+	debug_out(uart0_fifo.line);
+
+	zigbee_out("ATDL ");
+	zigbee_out(addr);
+	zigbee_out("\r");
+	uart0_readline();
+	debug_out(uart0_fifo.line);
+
+	zigbee_out("ATCN\r");
+
+	uart0_readline();
+	debug_out(uart0_fifo.line);
+}
+
 static void monZigbee(void * pvParameters)
 {
+	uint8_t test_flag = 0;
+	debug_out("zigbee started\r\n");
+
 	for(;;)
 	{
+
+		setAddress(__Addresses[0]);
 		if(db0.d_state == 0)
 		{
 			LPC_GPIO1->FIOSET |= (1 << 19);
+			uart0_putc('b');
+			// Send 'OFF' to NodeA
+
+			debug_out("0 OFF\r\n");
 		}
 		else
 		{
 			LPC_GPIO1->FIOCLR |= (1 << 19);
+			uart0_putc('a');
+			// Send 'ON' to NodeA
+
+			debug_out("0 ON\r\n");
 		}
 
+		_delay_ms(300);
+
+		setAddress(__Addresses[1]);
 		if(db1.d_state == 0)
 		{
-			LPC_GPIO1->FIOSET |= (1 << 20);
+			LPC_GPIO1->FIOSET |= (1 << 22);
+			// Send 'OFF' to NodeB
+			uart0_putc('b');
+
+			debug_out("1 OFF\r\n");
 		}
 		else
 		{
-			LPC_GPIO1->FIOCLR |= (1 << 20);
+			LPC_GPIO1->FIOCLR |= (1 << 22);
+			// Send 'ON' to NodeB
+			uart0_putc('a');
+
+			debug_out("1 ON\r\n");
 		}
 
+		_delay_ms(300);
+
+		setAddress(__Addresses[2]);
 		if(db2.d_state == 0)
 		{
 			LPC_GPIO1->FIOSET |= (1 << 21);
+			// Send 'OFF' to NodeC
+			uart0_putc('b');
+
+			debug_out("3 OFF\r\n");
 		}
 		else
 		{
 			LPC_GPIO1->FIOCLR |= (1 << 21);
+			uart0_putc('a');
+			// Send 'ON' to NodeC
+
+			debug_out("3 ON\r\n");
 		}
 		
 		vTaskDelay(1000);

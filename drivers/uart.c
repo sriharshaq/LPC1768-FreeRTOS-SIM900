@@ -103,7 +103,7 @@
 		{
 			char c = '\0';
 			char i = 0;
-			while(c != LF)
+			while(c != CR)
 			{
 				if(uart0_fifo.num_bytes > 0){
 					c = uart0_getc();
@@ -290,14 +290,14 @@
 			char i = 0;
 			while(c != LF)
 			{
-				if(uart0_fifo.num_bytes > 0){
-					c = uart0_getc();
-					uart0_fifo.line[i] = c;
+				if(uart1_fifo.num_bytes > 0){
+					c = uart1_getc();
+					uart1_fifo.line[i] = c;
 					i++;
 				}
 			}
 			c = '\0';
-			uart0_fifo.line[i] = c;
+			uart1_fifo.line[i] = c;
 			return i;
 		}
 
