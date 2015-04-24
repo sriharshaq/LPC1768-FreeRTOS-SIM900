@@ -46,3 +46,11 @@ void zigbee_out(char * ptr)
 	}
 }
 
+void modem_flush_buffer(void)
+{
+	while(uart3_fifo.num_bytes > 0)
+	{
+		char c = uart3_getc();
+	}
+}
+

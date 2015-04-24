@@ -17,6 +17,10 @@
 
 Modem_Type_t modem;
 
+/** @brief 
+ *  @param 
+ *  @return 
+ */
 void gsm_allocate_mem(void)
 {
 	/* allocate memory */
@@ -27,331 +31,143 @@ void gsm_allocate_mem(void)
 	modem.httpdata = (char *) malloc(1024);
 }
 
-/*
-************* AT Commands *************************************
-
-	Types: 
-	-----------------------------------------------------------
- 	1. 	Test Command:
-		AT+<x>=?
-
-	2.	Read Command:
-		AT+<x>?
-
-	3.	Write Command
-		AT+<x>=<...>
-
-	4. Execution command
-		AT+<x>
-	-----------------------------------------------------------
-
-	-----------------------------------------------------------
-	Response
-	-----------------------------------------------------------
-	<CR><LF><responce><CR><LF>
-	-----------------------------------------------------------
-
-	-----------------------------------------------------------
-	Example:
-	-----------------------------------------------------------
-		Commands		: 	AT
-		Type 			: 	Read Command
-		Response		: 	OK
-		Raw Response	:	<CR><LF>OK<CR><LF>
-	-----------------------------------------------------------
-*/
-
-
-uint8_t process_response(char * ptr, uint16_t len)
+int8_t process_response(char * ptr, uint16_t len)
 {
+	// 
 	if(isblankstr(uart3_fifo.line, len))
 	{
-		// this is blank line
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("blank line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
 		return __LINE_BLANK;
 	}
 
 	// Check for data
 	else if(memchr(ptr, '+', len) && memchr(ptr, ':', len))
 	{
-		// this is data
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("data line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
+		if(strstr(uart3_fifo.line, "+CPIN") || strstr(uart3_fifo.line, "+CFUN"))
+		{
+			return __LINE_START_OTHER;
+		}
 		return __LINE_DATA;
 	}
 
 	// Check for errors
 	else if(strstr(ptr,"ERROR") != NULL)
 	{
-		// this is error
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("error line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
 		return __LINE_ERROR;
 	}
 
-	// otherwise ?
+	// otherwise 
 	else
 	{
-		// this is ok
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("other line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
+		if(strstr(uart3_fifo.line, "RDY"))
+		{
+			return __LINE_START_RDY;
+		}
+		else if(strstr(uart3_fifo.line, "Call Ready"))
+		{
+			return __LINE_START_CRDY;
+		}
 		return __LINE_OTHER;
 	}
 }
 
-uint8_t gsm_ping_modem(void)
+/** @brief 		Send AT to modem and checks for OK
+ *  @param 		int8_t
+ *  @return 	void
+ */
+int8_t gsm_ping_modem(void)
 {
 	uint16_t len, resp;
-	uint8_t flag = 0;
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("sending 'AT'\r\n");
-	#endif
-
-	// send 'AT'
+	/* write AT to modem */
 	modem_out("AT\r");
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("'AT' sent\r\n");
-		debug_out("reading 1st line\r\n");
-	#endif
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
-	// Expected first line is blank
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 1st line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	// check whether blank line
-	if(resp == __LINE_BLANK)
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __BLANK line\r\n");
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
 	}
 
-	// else display error
-	// TODO: retry before going to further step
-	else
-	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __BLANK, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
-	}
-
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 2nd line\r\n");
-	#endif
-
-	// read 2nd line
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 2nd line\r\n");
-		debug_out("processing line, expected is __OTHER line\r\n");
-	#endif
+	// read 2nd line it should contain 'OK'
+	len = modem_readline();
 
 	resp = process_response(uart3_fifo.line,len);
 
 	if(resp == __LINE_OTHER)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __OTHER line\r\n");
-			debug_out("searching for 'OK'\r\n");
-		#endif
 		if(strstr(uart3_fifo.line, "OK"))
 		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("found ok\r\n");
-				debug_out("'AT' 'OK' success\r\n");
-			#endif
-			// SUCCESS
-			flag = 1;
+			return 1;
 		}
 		else
 		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("error expected is __OTHER, but got something else\r\n");
-				sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-				debug_out(debug_buff);
-			#endif
+			modem_flush_rx();
+			return __MODEM_LINE_NOT_OK;
 		}
 	}
 	else
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("'OK' not found\r\n");
-			sprintf(debug_buff, "line: %s", uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OTHER;
 	}
-	// FAIL
-	return flag;
+
+	/* never execute */
+	return 0;
 }
 
 
-uint8_t gsm_update_ipstatus(void)
+int8_t gsm_get_ipstatus(void)
 {
 	uint16_t len, resp;
-	uint8_t flag = 0;
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("sending 'AT+CIPSTATUS'\r\n");
-	#endif
-
-	// send 'AT'
+	/* write AT+CIPSTATUS to modem */
 	modem_out("AT+CIPSTATUS\r");
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("'AT+CIPSTATUS' sent\r\n");
-		debug_out("reading 1st line\r\n");
-	#endif
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
-	// Expected first line is blank
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 1st line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	// check whether blank line
-	if(resp == __LINE_BLANK)
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __BLANK line\r\n");
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
 	}
 
-	// else display error
-	// TODO: retry before going to further step
-	else
-	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __BLANK, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
-	}
-
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 2nd line\r\n");
-	#endif
-
-	// read 2nd line
-	len = uart3_readline();
-	//debug_out(uart3_fifo.line);
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 2nd line\r\n");
-		debug_out("processing line, expected is __OTHER line\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
+	/* read 2nd line it should contain 'OK' */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
 	if(resp == __LINE_OTHER)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __OTHER line\r\n");
-			debug_out("searching for 'OK'\r\n");
-		#endif
-		if(strstr(uart3_fifo.line, "OK"))
+		if(strstr(uart3_fifo.line, "OK") == NULL)
 		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("found ok\r\n");
-				debug_out("'AT+CIPSTATUS' 'OK' success\r\n");
-			#endif
-		}
-		else
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("'OK' not found\r\n");
-				sprintf(debug_buff, "line: %s", uart3_fifo.line);
-				debug_out(debug_buff);
-			#endif
+			modem_flush_rx();
+			return __MODEM_LINE_NOT_OK;
 		}
 	}
-
 	else
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __OTHER, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OTHER;
 	}
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 3rd line\r\n");
-	#endif
 
 	// read 3rd line it should be blank
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 3rd line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
 	// check whether blank line
-	if(resp == __LINE_BLANK)
+	if(resp != __LINE_BLANK)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __BLANK line\r\n");
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
 	}
 
-	// else display error
-	// TODO: retry before going to further step
-	else
-	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __BLANK, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
-	}
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 4th line\r\n");
-	#endif
+	
 
 	// read 4th line it should be blank
 	len = uart3_readline();

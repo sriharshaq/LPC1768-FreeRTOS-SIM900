@@ -1,90 +1,70 @@
 #ifndef __gsm_h__
 #define __gsm_h__
 
-#include "jsmn.h"
+/* define uart functions */
+#define modem_out(ptr) 		uart3_print(ptr)
+#define modem_readline()	uart3_readline()
+#define modem_getc()		uart3_getc()
+#define modem_putc(c)		uart3_putc(c)
+#define modem_flush_rx()	uart3_flushrx()
 
 /* modem response line types */
-#define __LINE_BLANK 	0
-#define __LINE_DATA		1
-#define __LINE_ERROR 	2
-#define __LINE_OTHER	3
+#define __LINE_BLANK 		0
+#define __LINE_DATA			1
+#define __LINE_ERROR 		2
+#define __LINE_OTHER		3
+#define __LINE_START_RDY	4
+#define __LINE_START_CRDY	5
+#define __LINE_START_OTHER	6
+
+/* MODEM ERRORS */
+#define __MODEM_LINE_STR_ERROR 	-1
+#define __MODEM_LINE_NOT_BLANK	-2
+#define __MODEM_LINE_NOT_DATA	-3
+#define __MODEM_LINE_NOT_OTHER	-4
+#define __MODEM_LINE_NOT_OK		-5
+#define __MODEM_LINE_TIMEOUT	-6
 
 typedef struct 
 {
-	char * ipstate;
-	char * apn;
-	char * opr;
-	char * ip;
-	char * httpdata;
 	uint8_t rssi;
+	char 	* ipstate;
+	char 	* apn;
+	char 	* opr;
+	char 	* ip;
+	char 	* httpdata;
 }Modem_Type_t;
 
+/* modem data struct */
 extern Modem_Type_t modem;
 
-extern uint8_t 	process_response(char *, uint16_t);
-extern uint8_t 	gsm_ping_modem(void);
-extern uint8_t 	gsm_update_ipstatus(void);
-extern void		gsm_allocate_mem(void);
-extern uint8_t 	gsm_update_rssi(void);
-extern uint8_t	gsm_set_apn(char *);
-extern uint8_t	gsm_get_apn(void);
+/* process */
+extern int8_t gsm_process_response(char *, uint16_t);
 
-extern uint8_t	gsm_get_opr_name(void);
-extern uint8_t	gsm_get_ipaddr(void);
+/* query */
+extern int8_t gsm_ping_modem(void);
+extern int8_t gsm_get_ipstatus(Modem_Type_t *);
+extern int8_t gsm_get_rssi(Modem_Type_t *);
+extern int8_t gsm_get_accesspoint(Modem_Type_t *);
+extern int8_t gsm_set_accesspoint(Modem_Type_t *);
+extern int8_t gsm_get_operator_name(Modem_Type_t *);
 
-extern uint8_t 	gsm_tcp_start(char *, char *);
-extern uint8_t 	gsm_tcp_close(void);
-extern uint8_t  gsm_bring_wireless_up(void);
-extern uint8_t	gsm_tcp_send(void);
+/* TCP IP */
+extern int8_t gsm_get_ip_address(Modem_Type_t *);
+extern int8_t gsm_tcp_start(Modem_Type_t *, char *, char *);
+extern int8_t gsm_tcp_close(Modem_Type_t *);
+extern int8_t gsm_tcp_send(char);
 
-extern uint8_t	gsm_http_head(char *, char *);
-extern uint8_t	gsm_http_get(char *, char *);
-extern uint8_t	gsm_http_delete(char *, char *);
-extern uint8_t	gsm_http_post(char *, char *, char *);
-extern uint8_t	gsm_http_put(char *, char *, char *);
+/* HTTP */
+extern uint8_t	gsm_http_head(Modem_Type_t *, char *, char *);
+extern uint8_t	gsm_http_get(Modem_Type_t *, char *, char *);
+extern uint8_t	gsm_http_delete(Modem_Type_t *, char *, char *);
+extern uint8_t	gsm_http_post(Modem_Type_t *, char *, char *, char *);
+extern uint8_t	gsm_http_put(Modem_Type_t *, char *, char *, char *);
 
-extern uint8_t	gsm_send_sms(char *, char *);
+/* SMS */
+extern uint8_t	gsm_send_sms(Modem_Type_t *, char *, char *);
 
-extern int jsoneq(const char *json, jsmntok_t *tok, const char *s);
-
-/* AT+CSTT
-
-+CSTT: "TATA.DOCOMO.INTERNET","",""
-
-OK
-*/
-
-/* AT+COPS?
-
-+COPS: 0,0,"T24"
-
-OK
-*/
-
-/* AT+CIFSR
-
-100.106.186.61
-*/
-
-/* TCP Start
-OK
-
-CONNECT OK
-*/
-
-/* after reset 
-RDY
-
-+CFUN: 1
-
-+CPIN: READY
-
-Call Ready
-*/
-
-/* AT+CIPSHUT
-SHUT OK
-*/
 
 
 #endif

@@ -68,10 +68,26 @@
 		while(!((LPC_UART0->LSR) & TEMT));
 	}
 
+	void uart0_print(char * ptr)
+	{
+		for(uint8_t i = 0;ptr[i] != '\0';i++)
+		{
+			uart0_putc(ptr[i]);
+		}
+	}
+
 	#ifdef UART0_INTERRUPT_ENABLED
 
 		/* Declare Ring Buffer */
 		UART_RING_BUFFER uart0_fifo;
+
+		void uart0_flushrx(void)
+		{
+			while(uart0_fifo.num_bytes > 0)
+			{
+				char c = uart0_getc();
+			}
+		}
 
 		char uart0_getc(void)
 		{
@@ -254,9 +270,25 @@
 		while(!((LPC_UART1->LSR) & TEMT));
 	}
 
+	void uart1_print(char * ptr)
+	{
+		for(uint8_t i = 0;ptr[i] != '\0';i++)
+		{
+			uart1_putc(ptr[i]);
+		}
+	}
+
 	#ifdef UART1_INTERRUPT_ENABLED
 		/* Declare Ring Buffer */
 		UART_RING_BUFFER uart1_fifo;
+
+		void uart1_flushrx(void)
+		{
+			while(uart1_fifo.num_bytes > 0)
+			{
+				char c = uart1_getc();
+			}
+		}
 
 		char uart1_getc(void)
 		{
@@ -437,10 +469,26 @@
 		while(!((LPC_UART2->LSR) & TEMT));
 	}
 
+	void uart2_print(char * ptr)
+	{
+		for(uint8_t i = 0;ptr[i] != '\0';i++)
+		{
+			uart2_putc(ptr[i]);
+		}
+	}
+
 	#ifdef UART2_INTERRUPT_ENABLED
 
 		/* Declare Ring Buffer */
 		UART_RING_BUFFER uart2_fifo;
+
+		void uart2_flushrx(void)
+		{
+			while(uart2_fifo.num_bytes > 0)
+			{
+				char c = uart2_getc();
+			}
+		}
 
 		char uart2_getc(void)
 		{
@@ -626,10 +674,26 @@
 		while(!((LPC_UART3->LSR) & TEMT));
 	}
 
+	void uart3_print(char * ptr)
+	{
+		for(uint8_t i = 0;ptr[i] != '\0';i++)
+		{
+			uart3_putc(ptr[i]);
+		}
+	}
+
 	#ifdef UART3_INTERRUPT_ENABLED
 
 		/* Declare Ring Buffer */
 		UART_RING_BUFFER uart3_fifo;
+
+		void uart3_flushrx(void)
+		{
+			while(uart3_fifo.num_bytes > 0)
+			{
+				char c = uart3_getc();
+			}
+		}
 
 		char uart3_getc(void)
 		{
