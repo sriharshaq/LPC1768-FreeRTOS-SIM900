@@ -1430,6 +1430,7 @@ uint8_t gsm_tcp_start(char * host, char * port)
 			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
 			debug_out(debug_buff);
 		#endif
+		return flag;
 	}
 
 	#if APPLICATION_LOG_LEVEL == 1
@@ -1521,7 +1522,7 @@ uint8_t gsm_tcp_send(void)
 		if(uart3_fifo.num_bytes > 0)
 		{
 			c = uart3_getc();
-			//uart0_putc(c);
+			uart0_putc(c);
 		}
 	}
 	while(c != '>');
@@ -1650,6 +1651,100 @@ uint8_t gsm_http_get(char * host, char * path)
 
 			// 5th line
 			modem_out("\r\n");
+
+			// Send
+			uart3_putc(0x1A);
+
+			debug_out("sent\r\n");
+
+			// Read 1st line
+			len = uart3_readline();
+			debug_out(uart3_fifo.line);
+
+			resp = process_response(uart3_fifo.line,len);
+
+			if(resp == __LINE_BLANK)
+			{
+				#if APPLICATION_LOG_LEVEL == 1
+					debug_out("got __BLANK line\r\n");
+				#endif
+			}
+			else
+			{
+				#if APPLICATION_LOG_LEVEL == 1
+					debug_out("expected __BLANK line, got something else\r\n");
+				#endif
+			}
+
+			// Read 2nd line
+			len = uart3_readline();
+			debug_out(uart3_fifo.line);
+
+			resp = process_response(uart3_fifo.line,len);
+
+			if(resp == __LINE_OTHER)
+			{
+				if(strstr(uart3_fifo.line, "SEND OK"))
+				{
+					flag = 1;
+				}
+			}
+		}
+		else
+		{
+			// ERROR
+			return flag;
+		}
+	}
+	else
+	{
+		// ERROR
+		return flag;
+	}
+	return flag;
+}
+
+uint8_t gsm_http_put(char * host, char * path, char * dat)
+{
+	uint8_t state, resp;
+	uint8_t flag = 0;
+	uint16_t len;
+	char buff[10];
+
+	state = gsm_tcp_start(host, "80");
+	if(state)
+	{
+		debug_out("tcp started\r\n");
+		state = gsm_tcp_send();
+		if(state)
+		{
+
+			debug_out("Send '>'\r\n");
+
+			// 1st line
+			modem_out("PUT ");
+			modem_out(path);
+			modem_out(" HTTP/1.1\r\n");
+
+			// 2nd line
+			modem_out("Host: ");
+			modem_out(host);
+			modem_out("\r\n");
+
+			// 3rd line 
+			modem_out("Content-Type: application/json\r\n");
+
+			// 4th line 
+			modem_out("Accept: application/json\r\n");
+
+			// 5th line
+			modem_out("Content-Length: ");
+			sprintf(buff, "%d", strlen(dat));
+			modem_out(buff);
+
+			modem_out("\r\n\r\n");
+			modem_out(dat);
+			modem_out("\r\n\r\n");
 
 			// Send
 			uart3_putc(0x1A);

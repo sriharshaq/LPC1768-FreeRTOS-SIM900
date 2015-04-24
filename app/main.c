@@ -40,38 +40,41 @@ FILE * stdin;
 FILE * stdout;
 FILE * stderr;
 
+#define WEIGHT_THRESHOLD 50
+
 /* protos */
-void prvSetupHardware(void);
-void debug_out(char *);
-void modem_out(char *);
+void 	prvSetupHardware(void);
 uint8_t process_response(char * ptr, uint16_t len);
 
 /* process */
 static void sysboot(void * pvParameters);
 static void monModem(void * pvParameters);
 static void establishGPRS(void * pvParameters);
-static void monZigbee(void * pvParameters);
+static void monWeight(void * pvParameters);
 static void display(void * pvParameters);
 
 /* semaphores */
 xSemaphoreHandle modemUARTSemaphore;
 xSemaphoreHandle lcdSemaphore;
-xSemaphoreHandle zigbeeSemaphore;
+xSemaphoreHandle weightSemaphore;
 
 /* Task Handles */
-xTaskHandle monTaskHandle, bootTaskHandle, GPRStaskHandle, monZigbeeHandle, displayHandle;
+xTaskHandle monTaskHandle, bootTaskHandle, GPRStaskHandle, 
+			WeightHandle, displayHandle;
 
 /* buffer for debug sprintf */
 char debug_buff[64];
 
 typedef struct 
 {
-	uint8_t ref;
-	uint8_t d_state;
-	uint16_t s_val;				
+	uint8_t id;
+	uint8_t changed;
+	int32_t weight;			
 }dbType_t;
 
-dbType_t db0, db1, db2;
+dbType_t _weight;
+
+volatile uint8_t changed = 0;
 
 int main(void)
 {
@@ -85,28 +88,8 @@ int main(void)
 			tskIDLE_PRIORITY,
 			&bootTaskHandle);
 
-			// xTaskCreate(monZigbee,
-			// 		(signed portCHAR *)"zigbee",
-			// 		configMINIMAL_STACK_SIZE,
-			// 		NULL,
-			// 		tskIDLE_PRIORITY,
-			// 		&monZigbeeHandle);	
-
-	//debug_out("system started\r\n");
-
 	/* Start the scheduler */
 	vTaskStartScheduler();
-
-	// while(1)
-	// {
-	// 	zigbee_out("+++");
-	// 	uart0_readline();
-	// 	debug_out(uart0_fifo.line);
-	// 	zigbee_out("ATCN\r");
-	// 	uart0_readline();
-	// 	debug_out(uart0_fifo.line);
-	// 	_delay_ms(1000);
-	//}
 
 	/* Never reach here */
 	return 0;
@@ -117,135 +100,98 @@ void prvSetupHardware(void)
 {
 	SystemInit();
 	SystemCoreClockUpdate();
-	uart0_init(9600);							// Debug port
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("debug port is up\r\n");
-	#endif
-
-	uart1_init(9600);							// zigbee port
+	uart0_init(9600);							// loadcell port
+	uart1_init(9600);							// debug port
 	uart3_init(9600);							// modem port
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("modem and zigbee ports are up\r\n");
-	#endif
 
 	lcd_init();									// init lcd
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("lcd init success\r\n");
-	#endif
-
-	#if LCD_INIT_PRINT == 1
-		lcd_write_instruction_4d(0x01);
-		lcd_write_instruction_4d(0x80);
-		lcd_print("-hardware init-");
-		lcd_write_instruction_4d(0xC0);
-		lcd_print("--- success ---");
-	#endif
-
 	gsm_allocate_mem();
-
-	/*db.created_at 	= (char *) malloc(70);
-	db.updated_at 	= (char *) malloc(70);
-	db.id 			= (char *) malloc(5);
-	db.ref 			= (char *) malloc(5);
-	db.d_state 		= (char *) malloc(5);
-	db.s_val 		= (char *) malloc(10);*/
-
-	LPC_GPIO1->FIODIR |= (1 << 19);
-	LPC_GPIO1->FIODIR |= (1 << 22);
-	LPC_GPIO1->FIODIR |= (1 << 21);
-
-	LPC_GPIO1->FIOSET |= (1 << 19);
-	LPC_GPIO1->FIOSET |= (1 << 22);
-	LPC_GPIO1->FIOSET |= (1 << 21);
-
 }
 
 
 /* processA */
 static void sysboot(void * pvParameters)
 {
+	uint8_t state;
+	_weight.weight = 0;
+	_weight.changed = 0;
 	for(;;)
 	{
 		uint16_t len;
 		modemUARTSemaphore 	= xSemaphoreCreateMutex();
 		lcdSemaphore		= xSemaphoreCreateMutex();
-		zigbeeSemaphore		= xSemaphoreCreateMutex();
+		weightSemaphore		= xSemaphoreCreateMutex();
 
-		#if APPLICATION_LOG_LEVEL == 1
-				debug_out("system botting\r\n");
-				debug_out("semaphores created\r\n");
-		#endif
-
-		if(modemUARTSemaphore == NULL){
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("modemUARTSemaphore create failed\r\n");
-			#endif
-		}
-		else{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("modemUARTSemaphore create success\r\n");
-			#endif
+		state = gsm_update_ipstatus();
+		if(state)
+		{
+			debug_out("ok\r\n");
 		}
 
-		if(lcdSemaphore == NULL){
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("lcdSemaphore create failed\r\n");
-			#endif
+		uint8_t state = gsm_get_opr_name();
+		if(state)
+		{
+			debug_out(modem.opr);
+			debug_out("\r\n");
 		}
-		else{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("lcdSemaphore create success\r\n");
-			#endif
-		}	
 
-
-		if(zigbeeSemaphore == NULL){
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("zigbeeSemaphore create failed\r\n");
-			#endif
+		state = gsm_get_apn();
+		if(state)
+		{
+			debug_out(modem.apn);
+			debug_out("\r\n");
 		}
-		else{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("zigbeeSemaphore create success\r\n");
-			#endif
-		}		
-	
 
-		#if MALLOC_TEST == 1
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("malloc test started\r\n");
-			#endif
-			char * c;
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("allocating 1024 bytes\r\n");
-			#endif
-			c = (char *) malloc(1024);
-			if(c != NULL)
+		uint8_t trials = 0;
+
+		back2:
+		if(gsm_set_apn("aircelgprs.pr"))
+		{
+			debug_out("apn ok\r\n");
+		}
+		else
+		{
+			trials++;
+			if(trials < 10)
 			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("malloc ok\r\n");
-				#endif
+				vTaskDelay(100);
+				goto back2;
 			}
-			else
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("malloc fail\r\n");
-				#endif
-			}
-			#if APPLICATION_LOG_LEVEL == 1 
-				debug_out("free 1024 bytes\r\n");
-				debug_out("free 1024 bytes success\r\n");
-			#endif
-			free(c);
-		#endif
+			debug_out("apn fail\r\n");
+		}
+
+		state = gsm_get_apn();
+		if(state)
+		{
+			debug_out(modem.apn);
+			debug_out("\r\n");
+		}
+
+		state = gsm_update_ipstatus();
+		if(state)
+		{
+			debug_out("ip status update\r\n");
+		}
+
+		state = gsm_bring_wireless_up();
+		if(state)
+		{
+			debug_out("wireless is up\r\n");
+		}
+		else
+		{
+			debug_out("wireless is fail\r\n");
+		}
+
+		state = gsm_update_ipstatus();
+		if(state)
+		{
+			debug_out("ip status update\r\n");
+		}
 
 
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("creating tasks\r\n");
-		#endif
 
 		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
 		{
@@ -272,111 +218,12 @@ static void sysboot(void * pvParameters)
 					tskIDLE_PRIORITY,
 					&displayHandle);	
 
-			xTaskCreate(monZigbee,
-					(signed portCHAR *)"zigbee",
+			xTaskCreate(monWeight,
+					(signed portCHAR *)"weight",
 					configMINIMAL_STACK_SIZE,
 					NULL,
 					tskIDLE_PRIORITY,
-					&monZigbeeHandle);	
-
-			if(monTaskHandle != NULL)
-			{
-				//vTaskSuspend(monModem);
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("monModem task create success\r\n");
-				#endif			
-			}
-			else
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("monModem task create error\r\n");
-				#endif		
-			}
-
-			if(GPRStaskHandle != NULL)
-			{
-				//vTaskSuspend(GPRStaskHandle);
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("establishGPRS task create success\r\n");
-				#endif			
-			}
-			else
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("establishGPRS task create error\r\n");
-				#endif		
-			}
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("returning semaphore\r\n");
-			#endif
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("deleting boot task\r\n");
-			#endif	
-
-			uint8_t state = gsm_get_opr_name();
-			if(state)
-			{
-				debug_out(modem.opr);
-				debug_out("\r\n");
-			}
-
-			// query apn
-			state = gsm_get_apn();
-			if(state)
-			{
-				debug_out(modem.apn);
-				debug_out("\r\n");
-			}
-
-			uint8_t trials = 0;
-
-			back2:
-			// update apn
-			if(gsm_set_apn("TATA.DOCOMO.INTERNET"))
-			{
-				debug_out("apn ok\r\n");
-			}
-			else
-			{
-				trials++;
-				if(trials < 10)
-				{
-					vTaskDelay(100);
-					goto back2;
-				}
-				debug_out("apn fail\r\n");
-			}
-
-			// query apn
-			state = gsm_get_apn();
-			if(state)
-			{
-				debug_out(modem.apn);
-				debug_out("\r\n");
-			}
-
-			state = gsm_bring_wireless_up();
-			if(state)
-			{
-				debug_out("ciicr success\r\n");
-			}
-			else
-			{
-				debug_out("ciicr fail\r\n");
-			}
-
-			state = gsm_get_ipaddr();
-			if(state)
-			{
-				debug_out("gsm_get_ipaddr success\r\n");
-				debug_out(modem.ip);
-			}
-			else
-			{
-				debug_out("gsm_get_ipaddr fail\r\n");
-			}
+					&WeightHandle);	
 
 			// return semaphore
 			xSemaphoreGive( modemUARTSemaphore );
@@ -396,21 +243,68 @@ static void monModem(void * pvParameters)
 		// Wait for resource
 		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
 		{
-			// ping modem
-			if(gsm_ping_modem())
-			{
-				debug_out("ping ok\r\n");
-			}
-			// Return semaphore
 			xSemaphoreGive( modemUARTSemaphore );		
 		}
 		vTaskDelay(500);
 	}
 }
 
+/* monWeight */
+static void monWeight(void * pvParameters)
+{
+	int32_t last_read = 0;
+	changed = 0;
+	for(;;)
+	{
+		char * __next;
+		char * __last;
+
+		if( xSemaphoreTake( weightSemaphore, ( portTickType ) 10 ) == pdTRUE )
+		{
+			uart0_readline();
+			int32_t __weight0 = strtol(uart0_fifo.line, &__next, 10);
+			int32_t __weight1 = strtol(__next + 1, &__last, 10);
+			_weight.weight = (__weight0 * 1000) + (__weight1);
+
+			if(last_read < _weight.weight)
+			{
+				if( (_weight.weight - WEIGHT_THRESHOLD) > last_read)
+				{
+					_weight.changed = 1;
+					changed = 1;
+					last_read = _weight.weight;
+					debug_out("changed 1\r\n");
+				}
+				/*else
+					_weight.changed = 0;*/
+			}
+			else if(last_read > _weight.weight)
+			{
+				if( (last_read - WEIGHT_THRESHOLD) > _weight.weight)
+				{
+					_weight.changed = 1;
+					changed = 1;
+					last_read = _weight.weight;
+					debug_out("changed 2\r\n");
+				}
+				/*else
+					_weight.changed = 0;*/
+			}
+			else
+			{
+				//sprintf(debug_buff, "%d,%d\r\n", last_read, _weight.weight);
+				//debug_out(debug_buff);
+				//_weight.changed = 0;
+			}
+			xSemaphoreGive(weightSemaphore);
+		}
+	}
+}
+
 static void display(void * pvParameters)
 {
 	uint8_t count = 0;
+	uint8_t state;
 	char buff[20];
 	for(;;)
 	{
@@ -419,411 +313,149 @@ static void display(void * pvParameters)
 			if(count == 0)
 			{
 				lcd_write_instruction_4d(0x80);
-				lcd_print(" GPRS STATUS        ");
+				lcd_print("weight: ");
+				lcd_print("            ");
+				sprintf(buff, " %d g", _weight.weight);
 				lcd_write_instruction_4d(0xC0);
-				lcd_print(modem.ipstate);
-				lcd_print("        ");
+				lcd_print(buff);
+				lcd_print("              ");
 				count = 1;
 			}
+			
 			else if(count == 1)
 			{
 				lcd_write_instruction_4d(0x80);
-				lcd_print(" IP ADDRESS        ");
+				lcd_print("operator:  ");
+				lcd_print("            ");
 				lcd_write_instruction_4d(0xC0);
-				lcd_print(modem.ip);
-				lcd_print("        ");
+				lcd_print(modem.opr);
+				lcd_print("             ");
 				count = 2;
 			}
+
 			else if(count == 2)
 			{
 				lcd_write_instruction_4d(0x80);
-				lcd_print(" Operator          ");
+				lcd_print("Access Point");
+				lcd_print("            ");
 				lcd_write_instruction_4d(0xC0);
-				lcd_print(modem.opr);
-				lcd_print("                 ");
+				lcd_print(modem.apn);
+				lcd_print("             ");
 				count = 3;
 			}
+
 			else if(count == 3)
 			{
 				lcd_write_instruction_4d(0x80);
-				lcd_print(" APN              ");
+				lcd_print("GPRS");
+				lcd_print("            ");
 				lcd_write_instruction_4d(0xC0);
-				lcd_print(modem.apn);
-				lcd_print("                 ");
+				lcd_print(modem.ipstate);
+				lcd_print("             ");
 				count = 4;
 			}
+
 			else if(count == 4)
 			{
 				lcd_write_instruction_4d(0x80);
-				lcd_print("RSSI             ");
-				lcd_write_instruction_4d(0xC0);
-				sprintf(buff, "%d", modem.rssi);
-				lcd_print(" ");
-				lcd_print(buff);
+				lcd_print("IP");
 				lcd_print("                 ");
-				count = 5;
-			}
-			else if(count == 5)
-			{
-				lcd_write_instruction_4d(0x80);
-				lcd_print("  DEVICE A      ");
 				lcd_write_instruction_4d(0xC0);
-
-				if(db0.d_state == 1){
-					lcd_print("ON");
-				}
-				else{
-					lcd_print("OFF");
-				}
-				lcd_print("               ");
-
-				count = 6;
-			}
-			else if(count == 6)
-			{
-				lcd_write_instruction_4d(0x80);
-				lcd_print("  DEVICE B      ");
-				lcd_write_instruction_4d(0xC0);
-
-				if(db1.d_state == 1){
-					lcd_print("ON");
-				}
-				else{
-					lcd_print("OFF");
-				}
-				lcd_print("               ");
-				count = 7;
-			}
-			else if(count == 7)
-			{
-				lcd_write_instruction_4d(0x80);
-				lcd_print("  DEVICE C      ");
-				lcd_write_instruction_4d(0xC0);
-
-				if(db2.d_state == 1){
-					lcd_print("ON");
-				}
-				else{
-					lcd_print("OFF");
-				}
-				lcd_print("               ");
+				lcd_print(modem.ip);
+				lcd_print("             ");
 				count = 0;
 			}	
-			xSemaphoreGive(lcdSemaphore);
-		}		
-		vTaskDelay(2000);
-	}
-	/*
-			------- RSSI ----------
-			2 	-109 	Marginal
-			3 	-107 	Marginal
-			4 	-105 	Marginal
-			5 	-103 	Marginal
-			6 	-101 	Marginal
-			7 	-99 	Marginal
-			8 	-97 	Marginal
-			9 	-95 	Marginal
-			10 	-93 	OK
-			11 	-91 	OK
-			12 	-89 	OK
-			13 	-87 	OK
-			14 	-85 	OK
-			15 	-83 	Good
-			16 	-81 	Good
-			17 	-79 	Good
-			18 	-77 	Good
-			19 	-75 	Good
-			20 	-73 	Excellent
-			21 	-71 	Excellent
-			22 	-69 	Excellent
-			23 	-67 	Excellent
-			24 	-65 	Excellent
-			25 	-63 	Excellent
-			26 	-61 	Excellent
-			27 	-59 	Excellent
-			28 	-57 	Excellent
-			29 	-55 	Excellent
-			30 	-53 	Excellent
-*/
-}
-
-char * __Addresses[] = {"40DC8B6D", "40BF8CAD", "40DC8B76"};
-
-void setAddress(char * addr)
-{
-	zigbee_out("+++");
-	uart0_readline();
-	debug_out(uart0_fifo.line);
-
-	zigbee_out("ATDL ");
-	zigbee_out(addr);
-	zigbee_out("\r");
-	uart0_readline();
-	debug_out(uart0_fifo.line);
-
-	zigbee_out("ATCN\r");
-
-	uart0_readline();
-	debug_out(uart0_fifo.line);
-}
-
-static void monZigbee(void * pvParameters)
-{
-	uint8_t test_flag = 0;
-	debug_out("zigbee started\r\n");
-
-	for(;;)
-	{
-
-		setAddress(__Addresses[0]);
-		if(db0.d_state == 0)
-		{
-			LPC_GPIO1->FIOSET |= (1 << 19);
-			uart0_putc('b');
-			// Send 'OFF' to NodeA
-
-			debug_out("0 OFF\r\n");
-		}
-		else
-		{
-			LPC_GPIO1->FIOCLR |= (1 << 19);
-			uart0_putc('a');
-			// Send 'ON' to NodeA
-
-			debug_out("0 ON\r\n");
+			xSemaphoreGive(lcdSemaphore);		
 		}
 
-		_delay_ms(300);
-
-		setAddress(__Addresses[1]);
-		if(db1.d_state == 0)
+		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
 		{
-			LPC_GPIO1->FIOSET |= (1 << 22);
-			// Send 'OFF' to NodeB
-			uart0_putc('b');
-
-			debug_out("1 OFF\r\n");
+			state = gsm_update_ipstatus();
+			state = gsm_get_ipaddr();
+			xSemaphoreGive( modemUARTSemaphore );
 		}
-		else
-		{
-			LPC_GPIO1->FIOCLR |= (1 << 22);
-			// Send 'ON' to NodeB
-			uart0_putc('a');
-
-			debug_out("1 ON\r\n");
-		}
-
-		_delay_ms(300);
-
-		setAddress(__Addresses[2]);
-		if(db2.d_state == 0)
-		{
-			LPC_GPIO1->FIOSET |= (1 << 21);
-			// Send 'OFF' to NodeC
-			uart0_putc('b');
-
-			debug_out("3 OFF\r\n");
-		}
-		else
-		{
-			LPC_GPIO1->FIOCLR |= (1 << 21);
-			uart0_putc('a');
-			// Send 'ON' to NodeC
-
-			debug_out("3 ON\r\n");
-		}
-		
-		vTaskDelay(1000);
+		vTaskDelay(750);
 	}
 }
+
+
 
 /* establishGPRS */
 static void establishGPRS(void * pvParameters)
 {
 	uint16_t len, resp;
 	uint8_t ref = 0;
+	uint8_t state;
+	char buff[32];
 	for(;;)
 	{
-		// Wait for resource
-		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
-		{
+		// if(_weight.changed == 1)
+		// {
+			while(changed == 0);
+			debug_out("weight changed http put started\r\n");
+			changed = 0;
 
-			// query ipstatus
-			uint8_t state = gsm_update_ipstatus();
-			if(state)
+			// Wait for resource
+			if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
 			{
-				debug_out("ok\r\n");
-				/*if( xSemaphoreTake( lcdSemaphore, ( portTickType ) 1 ) == pdTRUE )
+				sprintf(buff, "{\"w_val\":%d}",_weight.weight);
+
+				state = gsm_http_put("lit-taiga-2854.herokuapp.com","/weight/1",buff);
+
+				if(state || strstr(modem.ipstate,"CONNECT OK"))
 				{
+					debug_out("http ok\r\n");
 
-					lcd_write_instruction_4d(0xC0);
-					lcd_print(modem.ipstate);
-					lcd_print("        ");
-
-					// Return semaphore
-					xSemaphoreGive(lcdSemaphore);
-				}*/
-			}
-
-			// query rssi
-			state = gsm_update_rssi();
-			if(state)
-			{
-				debug_out("rssi ok\r\n");
-				/*if( xSemaphoreTake( lcdSemaphore, ( portTickType ) 1 ) == pdTRUE )
-				{
-					sprintf(debug_buff, "%d", modem.rssi);
-					lcd_write_instruction_4d(0x80);
-					lcd_print(debug_buff);
-					lcd_print("        ");
-
-					// Return semaphore
-					xSemaphoreGive(lcdSemaphore);
-				}*/	
-			}
-
-			if(ref == 0)
-				state = gsm_http_get("lit-taiga-2854.herokuapp.com","/zigbee/1");
-			else if(ref == 1)
-				state = gsm_http_get("lit-taiga-2854.herokuapp.com","/zigbee/2");
-			else if(ref == 2)
-				state = gsm_http_get("lit-taiga-2854.herokuapp.com","/zigbee/3");
-
-
-			if(state || strstr(modem.ipstate,"CONNECT OK"))
-			{
-				debug_out("http ok\r\n");
-
-				len = uart3_readline();
-				debug_out(uart3_fifo.line);
-
-				uint8_t blank_count = 0;
-				debug_out("header\r\n");
-				do
-				{
 					len = uart3_readline();
-					//debug_out(uart3_fifo.line);
-					if(isblankstr(uart3_fifo.line, len))
-					{
-						//debug_out("blank\r\n");
-						blank_count++;
-					}
+					debug_out(uart3_fifo.line);
 
-				}
-				while(isblankstr(uart3_fifo.line, len) != 1);
+					debug_out("header\r\n");
+					do
+					{
+						len = uart3_readline();
+					}
+					while(isblankstr(uart3_fifo.line, len) != 1);
 
-				debug_out("data enter\r\n");
-				uint16_t _i = 0;
-				while(uart3_fifo.num_bytes > 0)
-				{
-					char c = uart3_getc();
-					modem.httpdata[_i++] = c;
-					vTaskDelay(1);
-				}
-				debug_out("data\r\n");
-				modem.httpdata[_i] = '\0';
-				//debug_out(modem.httpdata);
-
-				//{"id":1,"created_at":"2015-04-21T16:47:49.393Z","updated_at":"2015-04-21T16:47:49.393Z","ref":1,"d_state":0,"s_val":0}
-				
-				char * __start = strstr(modem.httpdata, "ref");
-				if(__start)
-				{
-					__start += sizeof("ef\":");
-
-					if(ref == 0)
-					{
-						db0.ref = __start[0] - 48;
-						sprintf(debug_buff,"ref: %d\r\n", db0.ref);
-						debug_out(debug_buff);
-					}
-					else if(ref == 1)
-					{
-						db1.ref = __start[0] - 48;
-						sprintf(debug_buff,"ref: %d\r\n", db1.ref);
-						debug_out(debug_buff);
-					}
-					else if(ref == 2)
-					{
-						db2.ref = __start[0] - 48;
-						sprintf(debug_buff,"ref: %d\r\n", db2.ref);
-						debug_out(debug_buff);
-					}
-
-				
-					__start = strstr(modem.httpdata, "d_state");
-					__start += sizeof("_state\":");
-
-					if(ref == 0)
-					{
-						db0.d_state = __start[0] - 48;
-						sprintf(debug_buff,"state: %d\r\n", db0.d_state);
-						debug_out(debug_buff);
-					}
-					else if(ref == 1)
-					{
-						db1.d_state = __start[0] - 48;
-						sprintf(debug_buff,"state: %d\r\n", db1.d_state);
-						debug_out(debug_buff);
-					}
-					else if(ref == 2)
-					{
-						db2.d_state = __start[0] - 48;
-						sprintf(debug_buff,"state: %d\r\n", db2.d_state);
-						debug_out(debug_buff);
-					}
+					debug_out("data enter\r\n");
 					
-
-					__start = strstr(modem.httpdata, "s_val");
-					__start += sizeof("_val\":");
-					char * temp;
-					if(ref == 0)
+					uint16_t _i = 0;
+					while(uart3_fifo.num_bytes > 0)
 					{
-						db0.s_val = strtol(__start, &temp, 10);
-						sprintf(debug_buff,"value: %d\r\n", db0.s_val);
-						debug_out(debug_buff);
-						ref = 1;
+						char c = uart3_getc();
+						modem.httpdata[_i++] = c;
+						vTaskDelay(1);
 					}
-					else if(ref == 1)
+					debug_out("data\r\n");
+					modem.httpdata[_i] = '\0';
+					debug_out(modem.httpdata);
+
+					uint8_t trials = 0;
+					back1:
+					state = gsm_tcp_close();
+					if(state)
 					{
-						db1.s_val = strtol(__start, &temp, 10);
-						sprintf(debug_buff,"value: %d\r\n", db1.s_val);
-						debug_out(debug_buff);
-						ref = 2;
+						debug_out("TCP close\r\n");
 					}
-					else if(ref == 2)
+					else
 					{
-						db2.s_val = strtol(__start, &temp, 10);
-						sprintf(debug_buff,"value: %d\r\n", db2.s_val);
-						debug_out(debug_buff);
-						ref = 0;
+						debug_out("TCP close fail\r\n");
+						trials++;
+						if(trials < 10)
+						{
+							vTaskDelay(100);
+							goto back1;
+						}
 					}
-				}
-
-
-
-				uint8_t trials = 0;
-				back1:
-				state = gsm_tcp_close();
-				if(state)
-				{
-					debug_out("TCP close\r\n");
 				}
 				else
 				{
-					debug_out("TCP close fail\r\n");
-					trials++;
-					if(trials < 10)
-					{
-						vTaskDelay(100);
-						goto back1;
-					}
+					debug_out("http fail\r\n");
 				}
+				xSemaphoreGive( modemUARTSemaphore );
 			}
+		//}
 
-			xSemaphoreGive( modemUARTSemaphore );
-		}
-		vTaskDelay(500);
+			
 	}
 }
 

@@ -42,6 +42,9 @@ extern uint8_t	gsm_http_get(char *, char *);
 extern uint8_t	gsm_http_delete(char *, char *);
 extern uint8_t	gsm_http_post(char *, char *, char *);
 extern uint8_t	gsm_http_put(char *, char *, char *);
+
+extern uint8_t	gsm_send_sms(char *, char *);
+
 extern int jsoneq(const char *json, jsmntok_t *tok, const char *s);
 
 /* AT+CSTT
