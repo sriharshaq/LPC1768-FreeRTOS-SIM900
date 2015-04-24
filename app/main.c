@@ -11,7 +11,6 @@
 #include "lcd.h"
 #include "delay.h"
 #include "gsm.h"
-#include "jsmn.h"
 
 /* device includes */
 #include "system_LPC17xx.h"

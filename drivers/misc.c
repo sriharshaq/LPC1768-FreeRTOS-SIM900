@@ -16,41 +16,5 @@ uint8_t isblankstr(char * str, uint16_t len)
 
 	if(_count == len)
 		return 1;			// blank line
-	else
-		return 0;			// not blank
+	return 0;				// not blank
 }
-
-/* debug print */
-void debug_out(char * ptr)
-{
-	for(uint8_t i = 0;ptr[i] != '\0';i++)
-	{
-		uart1_putc(ptr[i]);
-	}
-}
-
-/* modem print */
-void modem_out(char * ptr)
-{
-	for(uint8_t i = 0;ptr[i] != '\0';i++)
-	{
-		uart3_putc(ptr[i]);
-	}
-}
-
-void zigbee_out(char * ptr)
-{
-	for(uint8_t i = 0;ptr[i] != '\0';i++)
-	{
-		uart0_putc(ptr[i]);
-	}
-}
-
-void modem_flush_buffer(void)
-{
-	while(uart3_fifo.num_bytes > 0)
-	{
-		char c = uart3_getc();
-	}
-}
-
