@@ -18,3 +18,8 @@ uint8_t isblankstr(char * str, uint16_t len)
 		return 1;			// blank line
 	return 0;				// not blank
 }
+
+uint8_t strtolower(char * str, uint16_t len)
+{
+	
+}

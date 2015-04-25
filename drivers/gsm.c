@@ -13,7 +13,6 @@
 #include "syscalls.h"
 #include "string.h"
 #include "config.h"
-#include "jsmn.h"
 
 Modem_Type_t modem;
 
@@ -569,203 +568,107 @@ int8_t gsm_start_gprs(void)
 	return __MODEM_LINE_NOT_OTHER;
 }
 
-uint8_t gsm_get_ipaddr(void)
+/** @brief 		Send AT+CIFSR to modem and checks for IP address if found returns success and stores in struct->ip_addr
+ *  @param 		Modem_Type_t
+ *  @return 	int8_t
+ */
+int8_t gsm_get_ipaddress(Modem_Type_t * t)
 {
 	uint16_t len, resp;
-	uint8_t flag = 0;
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("sending 'AT+CIFSR'\r\n");
-	#endif
-
-	// send 'AT'
+	// send 'AT+CIFSR'
 	modem_out("AT+CIFSR\r");
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("'AT+CIFSR' sent\r\n");
-		debug_out("reading 1st line\r\n");
-	#endif
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
-	// Expected first line is blank
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 1st line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	// check whether blank line
-	if(resp == __LINE_BLANK)
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __BLANK line\r\n");
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
 	}
 
-	// else display error
-	// TODO: retry before going to further step
-	else
+	/* read 2nd line it should contain IP address */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
+
+	/* check for __OTHER if not found return error */
+	if(resp != __LINE_OTHER)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __BLANK, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OTHER;
 	}
 
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 2nd line\r\n");
-	#endif
-
-	// read 2nd line
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 2nd line\r\n");
-		debug_out("processing line, expected is __OTHER line\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	if(resp == __LINE_OTHER)
+	if(strstr(uart3_fifo.line, "ERROR"))
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __OTHER line\r\n");
-			debug_out("searching for ip\r\n");
-		#endif
-		if(strstr(uart3_fifo.line, "ERROR"))
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("ip not found error\r\n");
-			#endif	
-		}
-		else
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("ip found error\r\n");
-			#endif
-			strcpy(modem.ip, uart3_fifo.line);
-			flag = 1;
-		}
-
+		modem_flush_rx();
+		return __MODEM_UNKNOWN_ERROR;
 	}
 	else
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __OTHER, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		if(memchr(uart3_fifo.line,'.',len))
+		{
+			strcpy(t->ip_addr, uart3_fifo.line);
+			modem_flush_rx();
+			return __LINE_PARSE_SUCCESS;
+		}
 	}
-	// FAIL
-	return flag;
+	return __MODEM_LINE_PARSE_ERROR;
 }
 
-uint8_t gsm_tcp_close(void)
+/** @brief 		Send AT+CIPCLOSE to modem and checks for 'OK'
+ *  @param 		void
+ *  @return 	int8_t
+ */
+int8_t gsm_tcp_disconnect(void)
 {
 	uint16_t len, resp;
-	uint8_t flag = 0;
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("sending 'AT+CIPCLOSE'\r\n");
-	#endif
-
-	// send 'AT'
+	/* send AT+CIPCLOSE to modem */
 	modem_out("AT+CIPCLOSE\r");
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("'AT+CIPCLOSE' sent\r\n");
-		debug_out("reading 1st line\r\n");
-	#endif
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
-	// Expected first line is blank
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 1st line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	// check whether blank line
-	if(resp == __LINE_BLANK)
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __BLANK line\r\n");
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
 	}
 
-	// else display error
-	// TODO: retry before going to further step
-	else
+	/* read 2nd line it should contain __DATA */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
+
+	/* check for __OTHER if not found return error */
+	if(resp != __LINE_OTHER)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __BLANK, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OTHER;
 	}
 
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 2nd line\r\n");
-	#endif
-
-	// read 2nd line
-	len = uart3_readline();
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 2nd line\r\n");
-		debug_out("processing line, expected is __OTHER line\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	if(resp == __LINE_OTHER)
+	if(strstr(uart3_fifo.line, "CLOSE OK"))
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __OTHER line\r\n");
-			debug_out("searching for ip\r\n");
-		#endif
-		if(strstr(uart3_fifo.line, "ERROR"))
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("line contain 'ERROR'\r\n");
-			#endif	
-		}
-		else if(strstr(uart3_fifo.line, "CLOSE OK"))
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("line contain 'CLOSE OK'\r\n");
-			#endif
-			flag = 1;
-		}
+		modem_flush_rx();
+		return __LINE_PARSE_SUCCESS;	
+	}
 
-	}
-	else
-	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __OTHER, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
-	}
-	// FAIL
-	return flag;
+	modem_flush_rx();
+	return __MODEM_LINE_PARSE_ERROR;
 }
 
-uint8_t gsm_tcp_start(char * host, char * port)
+// TODO: Connection timeout has to set
+/** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
+ *  @param 		host, port (strings)
+ *  @return 	int8_t
+ */
+int8_t gsm_tcp_connect(char * host, char * port)
 {
 	uint16_t len, resp;
-	uint8_t flag = 0;
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("sending 'AT+CIPSTART'\r\n");
-	#endif
 
 	// send 'AT'
 	modem_out("AT+CIPSTART=\"TCP\",\"");
@@ -774,391 +677,253 @@ uint8_t gsm_tcp_start(char * host, char * port)
 	modem_out(port);
 	modem_out("\r");
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("'AT+CIPSTART' sent\r\n");
-		debug_out("reading 1st line\r\n");
-	#endif
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
-	// Expected first line is blank
-	len = uart3_readline();
-	//debug_out(uart3_fifo.line);
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 1st line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	// check whether blank line
-	if(resp == __LINE_BLANK)
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __BLANK line\r\n");
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
 	}
 
-	// else display error
-	// TODO: retry before going to further step
-	else
+	/* read 2nd line it should contain __OTHER */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
+
+	/* check for __OTHER if not found return error */
+	if(resp != __LINE_OTHER)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __BLANK, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OTHER;
 	}
 
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 2nd line\r\n");
-	#endif
-
-	// read 2nd line
-	len = uart3_readline();
-	//debug_out(uart3_fifo.line);
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 2nd line\r\n");
-		debug_out("processing line, expected is __OTHER line\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	if(resp == __LINE_OTHER)
+	/* search for 'OK' */
+	if(strstr(uart3_fifo.line, "OK") == NULL)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __OTHER line\r\n");
-			debug_out("searching for ip\r\n");
-		#endif
-		if(strstr(uart3_fifo.line, "ERROR"))
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("ip not found error\r\n");
-			#endif	
-		}
-		else if(strstr(uart3_fifo.line, "OK"))
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("ip found error\r\n");
-			#endif
-		}
-	}
-	else
-	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __OTHER, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
-		return flag;
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OK;
 	}
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 3rd line\r\n");
-	#endif
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
-	// Expected first line is blank
-	len = uart3_readline();
-	//debug_out(uart3_fifo.line);
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 3rd line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	// check whether blank line
-	if(resp == __LINE_BLANK)
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
 	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __BLANK line\r\n");
-		#endif
-	}
-	// else display error
-	// TODO: retry before going to further step
-	else
-	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __BLANK, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
 	}	
 
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("reading 4th line\r\n");
-	#endif
+	/* read 2nd line it should contain __OTHER */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
 
-	// Expected first line is blank
-	len = uart3_readline();
-	//debug_out(uart3_fifo.line);
-
-	#if APPLICATION_LOG_LEVEL == 1
-		debug_out("read 4th line\r\n");
-		debug_out("processing line, expected is blank\r\n");
-	#endif
-
-	resp = process_response(uart3_fifo.line,len);
-
-	// check whether blank line
-	if(resp == __LINE_OTHER)
+	/* check for __OTHER if not found return error */
+	if(resp != __LINE_OTHER)
 	{
-		//debug_out("got __OTHER line\r\n");
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("got __OTHER line\r\n");
-		#endif
-		if(strstr(uart3_fifo.line, "CONNECT OK"))
-		{
-			//debug_out("got 'CONNECT OK'\r\n");
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("got 'SEND OK' line\r\n");
-			#endif
-			flag = 1;
-		}
-	}
-	// else display error
-	// TODO: retry before going to further step
-	else
-	{
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("error expected is __OTHER, but got something else\r\n");
-			sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-			debug_out(debug_buff);
-		#endif
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OTHER;
 	}
 
-	// FAIL
-	return flag;
+	if(strstr(uart3_fifo.line, "CONNECT OK"))
+	{
+		modem_flush_rx();
+		return __LINE_PARSE_SUCCESS;
+	}
+	modem_flush_rx();
+	return __MODEM_UNKNOWN_ERROR;
 }
 
-uint8_t gsm_tcp_send(void)
+/** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
+ *  @param 		host, port (strings)
+ *  @return 	int8_t
+ */
+int8_t gsm_tcp_send(char c)
 {
+	/* send AT+CIPSEND to modem */
 	modem_out("AT+CIPSEND\r");
 
-	char c = '\0';
-	do
-	{
-		if(uart3_fifo.num_bytes > 0)
-		{
-			c = uart3_getc();
-			uart0_putc(c);
-		}
-	}
-	while(c != '>');
+	// CAUTION: Blocking
+	while(uart3_fifo.num_bytes == 0);
 
-	return 1;
+	if(modem_getc() == c)
+		return 1;
+
+	return -1;	
 }
 
-uint8_t gsm_http_head(char * host, char * path)
+/** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
+ *  @param 		host, port (strings)
+ *  @return 	int8_t
+ */
+int8_t gsm_http_head(char * host, char * path)
 {
 	uint8_t state, resp;
-	uint8_t flag = 0;
 	uint16_t len;
 
-	state = gsm_tcp_start(host, "80");
-	if(state)
+	if(gsm_tcp_connect(host, "80"))
 	{
-		debug_out("tcp started\r\n");
-		state = gsm_tcp_send();
-		if(state)
+		if(gsm_tcp_send('>'))
 		{
 
-			debug_out("Send '>'\r\n");
-
-			// 1st line
+			/* request type */
 			modem_out("HEAD ");
 			modem_out(path);
 			modem_out(" HTTP/1.1\r\n");
 
-			// 2nd line
+			/* host name */
 			modem_out("Host: ");
 			modem_out(host);
 			modem_out("\r\n");
 
-			// 3rd line 
+			/* content type */
 			modem_out("Content-Type: application/json\r\n");
 
-			// 4th line 
+			/* acceptance type */
 			modem_out("Accept: application/json\r\n");
 
-			// 5th line
 			modem_out("\r\n");
 
-			// Send
-			uart3_putc(0x1A);
+			// Send completed command
+			modem_putc(0x1A);
 
-			debug_out("sent\r\n");
+			/* read 1st line it should blank */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
 
-			// Read 1st line
-			len = uart3_readline();
-			debug_out(uart3_fifo.line);
-
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_BLANK)
+			/* if it's not blank return error */
+			if(resp != __LINE_BLANK)
 			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("got __BLANK line\r\n");
-				#endif
-			}
-			else
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("expected __BLANK line, got something else\r\n");
-				#endif
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_BLANK;
 			}
 
-			// Read 2nd line
-			len = uart3_readline();
-			debug_out(uart3_fifo.line);
+			/* read 2nd line it should contain 'SEND OK' */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
 
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_OTHER)
+			/* check for __OTHER if not found return error */
+			if(resp != __LINE_OTHER)
 			{
-				if(strstr(uart3_fifo.line, "SEND OK"))
-				{
-					flag = 1;
-				}
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_OTHER;
+			}
+
+			if(strstr(uart3_fifo.line, "SEND OK"))
+			{
+					modem_flush_rx();
+					return __LINE_PARSE_SUCCESS;
 			}
 		}
-		else
-		{
-			// ERROR
-			return flag;
-		}
 	}
-	else
-	{
-		// ERROR
-		return flag;
-	}
-	return flag;
+	modem_flush_rx();
+	return __MODEM_UNKNOWN_ERROR;
 }
 
-uint8_t gsm_http_get(char * host, char * path)
+/** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
+ *  @param 		host, port (strings)
+ *  @return 	int8_t
+ */
+int8_t gsm_http_get(char * host, char * path)
 {
 	uint8_t state, resp;
-	uint8_t flag = 0;
 	uint16_t len;
 
-	state = gsm_tcp_start(host, "80");
-	if(state)
+	if(gsm_tcp_connect(host, "80"))
 	{
-		debug_out("tcp started\r\n");
-		state = gsm_tcp_send();
-		if(state)
+		if(gsm_tcp_send('>'))
 		{
 
-			debug_out("Send '>'\r\n");
-
-			// 1st line
+			/* request type */
 			modem_out("GET ");
 			modem_out(path);
 			modem_out(" HTTP/1.1\r\n");
 
-			// 2nd line
+			/* host name */
 			modem_out("Host: ");
 			modem_out(host);
 			modem_out("\r\n");
 
-			// 3rd line 
+			/* content type */
 			modem_out("Content-Type: application/json\r\n");
 
-			// 4th line 
+			/* acceptance type */
 			modem_out("Accept: application/json\r\n");
 
-			// 5th line
 			modem_out("\r\n");
 
-			// Send
-			uart3_putc(0x1A);
+			/* Send completed command */
+			modem_putc(0x1A);
 
-			debug_out("sent\r\n");
+			/* read 1st line it should blank */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
 
-			// Read 1st line
-			len = uart3_readline();
-			debug_out(uart3_fifo.line);
-
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_BLANK)
+			/* if it's not blank return error */
+			if(resp != __LINE_BLANK)
 			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("got __BLANK line\r\n");
-				#endif
-			}
-			else
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("expected __BLANK line, got something else\r\n");
-				#endif
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_BLANK;
 			}
 
-			// Read 2nd line
-			len = uart3_readline();
-			debug_out(uart3_fifo.line);
+			/* read 2nd line it should contain 'SEND OK' */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
 
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_OTHER)
+			/* check for __OTHER if not found return error */
+			if(resp != __LINE_OTHER)
 			{
-				if(strstr(uart3_fifo.line, "SEND OK"))
-				{
-					flag = 1;
-				}
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_OTHER;
+			}
+
+			if(strstr(uart3_fifo.line, "SEND OK"))
+			{
+					modem_flush_rx();
+					return __LINE_PARSE_SUCCESS;
 			}
 		}
-		else
-		{
-			// ERROR
-			return flag;
-		}
 	}
-	else
-	{
-		// ERROR
-		return flag;
-	}
-	return flag;
+	modem_flush_rx();
+	return __MODEM_UNKNOWN_ERROR;
 }
 
-uint8_t gsm_http_put(char * host, char * path, char * dat)
+/** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
+ *  @param 		host, port (strings)
+ *  @return 	int8_t
+ */
+int8_t gsm_http_put(char * host, char * path, char * dat)
 {
 	uint8_t state, resp;
-	uint8_t flag = 0;
 	uint16_t len;
-	char buff[10];
 
-	state = gsm_tcp_start(host, "80");
-	if(state)
+	if(gsm_tcp_connect(host, "80"))
 	{
-		debug_out("tcp started\r\n");
-		state = gsm_tcp_send();
-		if(state)
+		if(gsm_tcp_send('>'))
 		{
 
-			debug_out("Send '>'\r\n");
-
-			// 1st line
+			/* request type */
 			modem_out("PUT ");
 			modem_out(path);
 			modem_out(" HTTP/1.1\r\n");
 
-			// 2nd line
+			/* host name */
 			modem_out("Host: ");
 			modem_out(host);
 			modem_out("\r\n");
 
-			// 3rd line 
+			/* content type */
 			modem_out("Content-Type: application/json\r\n");
 
-			// 4th line 
+			/* acceptance type */
 			modem_out("Accept: application/json\r\n");
 
-			// 5th line
+			modem_out("\r\n");
+
+			/* Content Length */
 			modem_out("Content-Length: ");
 			sprintf(buff, "%d", strlen(dat));
 			modem_out(buff);
@@ -1167,54 +932,183 @@ uint8_t gsm_http_put(char * host, char * path, char * dat)
 			modem_out(dat);
 			modem_out("\r\n\r\n");
 
-			// Send
-			uart3_putc(0x1A);
+			/* Send completed command */
+			modem_putc(0x1A);
 
-			debug_out("sent\r\n");
+			/* read 1st line it should blank */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
 
-			// Read 1st line
-			len = uart3_readline();
-			debug_out(uart3_fifo.line);
-
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_BLANK)
+			/* if it's not blank return error */
+			if(resp != __LINE_BLANK)
 			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("got __BLANK line\r\n");
-				#endif
-			}
-			else
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("expected __BLANK line, got something else\r\n");
-				#endif
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_BLANK;
 			}
 
-			// Read 2nd line
-			len = uart3_readline();
-			debug_out(uart3_fifo.line);
+			/* read 2nd line it should contain 'SEND OK' */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
 
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_OTHER)
+			/* check for __OTHER if not found return error */
+			if(resp != __LINE_OTHER)
 			{
-				if(strstr(uart3_fifo.line, "SEND OK"))
-				{
-					flag = 1;
-				}
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_OTHER;
 			}
-		}
-		else
-		{
-			// ERROR
-			return flag;
+
+			if(strstr(uart3_fifo.line, "SEND OK"))
+			{
+					modem_flush_rx();
+					return __LINE_PARSE_SUCCESS;
+			}
 		}
 	}
-	else
+	modem_flush_rx();
+	return __MODEM_UNKNOWN_ERROR;
+}
+
+/** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
+ *  @param 		host, port (strings)
+ *  @return 	int8_t
+ */
+int8_t gsm_http_post(char * host, char * path, char * dat)
+{
+	uint8_t state, resp;
+	uint16_t len;
+
+	if(gsm_tcp_connect(host, "80"))
 	{
-		// ERROR
-		return flag;
+		if(gsm_tcp_send('>'))
+		{
+
+			/* request type */
+			modem_out("POST ");
+			modem_out(path);
+			modem_out(" HTTP/1.1\r\n");
+
+			/* host name */
+			modem_out("Host: ");
+			modem_out(host);
+			modem_out("\r\n");
+
+			/* content type */
+			modem_out("Content-Type: application/json\r\n");
+
+			/* acceptance type */
+			modem_out("Accept: application/json\r\n");
+
+			modem_out("\r\n");
+
+			/* Content Length */
+			modem_out("Content-Length: ");
+			sprintf(buff, "%d", strlen(dat));
+			modem_out(buff);
+
+			modem_out("\r\n\r\n");
+			modem_out(dat);
+			modem_out("\r\n\r\n");
+
+			/* Send completed command */
+			modem_putc(0x1A);
+
+			/* read 1st line it should blank */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			/* if it's not blank return error */
+			if(resp != __LINE_BLANK)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_BLANK;
+			}
+
+			/* read 2nd line it should contain 'SEND OK' */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			/* check for __OTHER if not found return error */
+			if(resp != __LINE_OTHER)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_OTHER;
+			}
+
+			if(strstr(uart3_fifo.line, "SEND OK"))
+			{
+					modem_flush_rx();
+					return __LINE_PARSE_SUCCESS;
+			}
+		}
 	}
-	return flag;
+	modem_flush_rx();
+	return __MODEM_UNKNOWN_ERROR;
+}
+
+/** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
+ *  @param 		host, port (strings)
+ *  @return 	int8_t
+ */
+int8_t gsm_http_delete(char * host, char * path)
+{
+	uint8_t state, resp;
+	uint16_t len;
+
+	if(gsm_tcp_connect(host, "80"))
+	{
+		if(gsm_tcp_send('>'))
+		{
+
+			/* request type */
+			modem_out("DELETE ");
+			modem_out(path);
+			modem_out(" HTTP/1.1\r\n");
+
+			/* host name */
+			modem_out("Host: ");
+			modem_out(host);
+			modem_out("\r\n");
+
+			/* content type */
+			modem_out("Content-Type: application/json\r\n");
+
+			/* acceptance type */
+			modem_out("Accept: application/json\r\n");
+
+			modem_out("\r\n");
+
+			/* Send completed command */
+			modem_putc(0x1A);
+
+			/* read 1st line it should blank */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			/* if it's not blank return error */
+			if(resp != __LINE_BLANK)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_BLANK;
+			}
+
+			/* read 2nd line it should contain 'SEND OK' */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			/* check for __OTHER if not found return error */
+			if(resp != __LINE_OTHER)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_OTHER;
+			}
+
+			if(strstr(uart3_fifo.line, "SEND OK"))
+			{
+					modem_flush_rx();
+					return __LINE_PARSE_SUCCESS;
+			}
+		}
+	}
+	modem_flush_rx();
+	return __MODEM_UNKNOWN_ERROR;
 }

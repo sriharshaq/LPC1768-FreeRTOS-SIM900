@@ -29,6 +29,7 @@
 #define __MODEM_LINE_CS_ERROR		-7
 #define __MODEM_LINE_PARSE_ERROR	-8
 #define __PARAM_PASS_VALUE_ERROR	-9
+#define __MODEM_UNKNOWN_ERROR		-10
 
 typedef struct 
 {
@@ -69,13 +70,13 @@ extern int8_t 	gsm_tcp_disconnect(void);
 extern int8_t 	gsm_tcp_send(char);
 
 /* HTTP */
-extern uint8_t	gsm_http_head(Modem_Type_t *, char *, char *);
-extern uint8_t	gsm_http_get(Modem_Type_t *, char *, char *);
-extern uint8_t	gsm_http_delete(Modem_Type_t *, char *, char *);
-extern uint8_t	gsm_http_post(Modem_Type_t *, char *, char *, char *);
-extern uint8_t	gsm_http_put(Modem_Type_t *, char *, char *, char *);
+extern int8_t	gsm_http_head(char *, char *);
+extern int8_t	gsm_http_get(char *, char *);
+extern int8_t	gsm_http_delete(char *, char *);
+extern int8_t	gsm_http_post(char *, char *, char *);
+extern int8_t	gsm_http_put(char *, char *, char *);
 
 /* SMS */
-extern uint8_t	gsm_send_sms(Modem_Type_t *, char *, char *);
+extern int8_t	gsm_send_sms(char *, char *);
 
 #endif

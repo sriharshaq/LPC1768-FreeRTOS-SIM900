@@ -11,7 +11,6 @@
 
 void lcd_write_4(uint8_t theByte)
 {
-
 	LPC_GPIO0->FIOCLR |= (1 << LCD_D7);	
 	if(theByte & 1 << 7)
 		LPC_GPIO0->FIOSET |= (1 << LCD_D7);

@@ -39,53 +39,89 @@ FILE * stdin;
 FILE * stdout;
 FILE * stderr;
 
-#define WEIGHT_THRESHOLD 50
+/* Define how many number of operator or apn we have (opr and apn array length should be same) */
+#define APN_OPR_LIST_LEN 10
 
-/* protos */
+/* Setup Hardware Function */
 void 	prvSetupHardware(void);
-uint8_t process_response(char * ptr, uint16_t len);
 
-/* process */
-static void sysboot(void * pvParameters);
-static void monModem(void * pvParameters);
-static void establishGPRS(void * pvParameters);
-static void monWeight(void * pvParameters);
-static void display(void * pvParameters);
+/* Tasks */
+static void systemBoot(void *);
+static void connectGPRS(void *);
+static void updateModemStatus(void *);
+static void displayProcess(void *);
+static void measureWeight(void *);
 
-/* semaphores */
-xSemaphoreHandle modemUARTSemaphore;
-xSemaphoreHandle lcdSemaphore;
-xSemaphoreHandle weightSemaphore;
+/* Semaphores */
+xSemaphoreHandle modemSema;
+xSemaphoreHandle displaySema;
+xSemaphoreHandle measureSema;
 
 /* Task Handles */
-xTaskHandle monTaskHandle, bootTaskHandle, GPRStaskHandle, 
-			WeightHandle, displayHandle;
+xTaskHandle systemBootHandle;
+xTaskHandle connectGPRSHandle;
+xTaskHandle updateModemStatusHandle;
+xTaskHandle displayProcessHandle;
+xTaskHandle measureWeightHandle;
 
-/* buffer for debug sprintf */
-char debug_buff[64];
+const char * oprList[]	=	{	
+								"airtel",
+								"cellone",
+								"idea",
+								"aircel",
+								"tata docomo",
+								"reliance",
+								"vodafone"
+							};
 
-typedef struct 
+const char * apnList[]	=	{	
+								"airtel",
+								"cellone",
+								"idea",
+								"aircel",
+								"tata docomo",
+								"reliance",
+								"vodafone"
+							};
+
+/** @brief 
+ *  @param 
+ *  @return 
+ */
+void prvSetupHardware(void)
 {
-	uint8_t id;
-	uint8_t changed;
-	int32_t weight;			
-}dbType_t;
+	SystemInit();
+	SystemCoreClockUpdate();
 
-dbType_t _weight;
+	/* init uart's */
+	uart0_init(__UART0_BAUDRATE);				// loadcell port
+	uart1_init(__UART1_BAUDRATE);				// debug port
+	uart3_init(__UART3_BAUDRATE);				// modem port
 
-volatile uint8_t changed = 0;
+	/* initiate lcd */
+	lcd_init();									// init lcd
 
+	/* init buffers for gsm modem */
+	gsm_buff_init();
+}
+
+
+/** @brief 
+ *  @param 
+ *  @return 
+ */
 int main(void)
 {
 	/* Setup the Hardware */
 	prvSetupHardware();
 
-	xTaskCreate(sysboot,
-			(signed portCHAR *)"sysboot",
-			configMINIMAL_STACK_SIZE,
-			NULL,
-			tskIDLE_PRIORITY,
-			&bootTaskHandle);
+	/* Create Boot Task */
+	xTaskCreate(	systemBoot,
+					(signed portCHAR *)"boot",
+					configMINIMAL_STACK_SIZE,
+					NULL,
+					tskIDLE_PRIORITY,
+					&systemBootHandle);
 
 	/* Start the scheduler */
 	vTaskStartScheduler();
@@ -94,159 +130,120 @@ int main(void)
 	return 0;
 }
 
-/* setup hardware */
-void prvSetupHardware(void)
+/** @brief 
+ *  @param 
+ *  @return 
+ */
+static void systemBoot(void * pvParameters)
 {
-	SystemInit();
-	SystemCoreClockUpdate();
-
-	uart0_init(9600);							// loadcell port
-	uart1_init(9600);							// debug port
-	uart3_init(9600);							// modem port
-
-	lcd_init();									// init lcd
-
-	gsm_allocate_mem();
-}
-
-
-/* processA */
-static void sysboot(void * pvParameters)
-{
-	uint8_t state;
-	_weight.weight = 0;
-	_weight.changed = 0;
+	uint8_t __response;
 	for(;;)
 	{
-		uint16_t len;
-		modemUARTSemaphore 	= xSemaphoreCreateMutex();
-		lcdSemaphore		= xSemaphoreCreateMutex();
-		weightSemaphore		= xSemaphoreCreateMutex();
+		/* create semaphores */
+		modemSema 			= xSemaphoreCreateMutex();
+		displaySemap		= xSemaphoreCreateMutex();
+		measureSema			= xSemaphoreCreateMutex();
 
-		state = gsm_update_ipstatus();
-		if(state)
-		{
-			debug_out("ok\r\n");
-		}
+		/* Get operator name */
+		// TODO: process return value
+		__response = gsm_get_operator();
 
-		uint8_t state = gsm_get_opr_name();
-		if(state)
-		{
-			debug_out(modem.opr);
-			debug_out("\r\n");
-		}
+		/* convert to lower for comparison */
+		strtolower(modem.operator);
 
-		state = gsm_get_apn();
-		if(state)
+		/* check operator and findout APN */
+		for(uint8_t i = 0;i < APN_OPR_LIST_LEN;i++)
 		{
-			debug_out(modem.apn);
-			debug_out("\r\n");
-		}
-
-		uint8_t trials = 0;
-
-		back2:
-		if(gsm_set_apn("aircelgprs.pr"))
-		{
-			debug_out("apn ok\r\n");
-		}
-		else
-		{
-			trials++;
-			if(trials < 10)
+			if(strstr(modem.operator, oprList[i]))
 			{
-				vTaskDelay(100);
-				goto back2;
+				strcpy(modem.setapn, apnList[i]);
+				break;
 			}
-			debug_out("apn fail\r\n");
 		}
 
-		state = gsm_get_apn();
-		if(state)
-		{
-			debug_out(modem.apn);
-			debug_out("\r\n");
-		}
+		/* delete the boot task */
+		vTaskDelete(systemBootHandle);
 
-		state = gsm_update_ipstatus();
-		if(state)
-		{
-			debug_out("ip status update\r\n");
-		}
-
-		state = gsm_bring_wireless_up();
-		if(state)
-		{
-			debug_out("wireless is up\r\n");
-		}
-		else
-		{
-			debug_out("wireless is fail\r\n");
-		}
-
-		state = gsm_update_ipstatus();
-		if(state)
-		{
-			debug_out("ip status update\r\n");
-		}
-
-
-
-		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
-		{
-			// monitor modem
-			xTaskCreate(monModem,
-					(signed portCHAR *)"monModem",
-					configMINIMAL_STACK_SIZE,
-					NULL,
-					tskIDLE_PRIORITY,
-					&monTaskHandle);
-
-			// create task and resume until OK is received from above task
-			xTaskCreate(establishGPRS,
-					(signed portCHAR *)"GPRS",
-					configMINIMAL_STACK_SIZE,
-					NULL,
-					tskIDLE_PRIORITY,
-					&GPRStaskHandle);	
-
-			xTaskCreate(display,
-					(signed portCHAR *)"display",
-					configMINIMAL_STACK_SIZE,
-					NULL,
-					tskIDLE_PRIORITY,
-					&displayHandle);	
-
-			xTaskCreate(monWeight,
-					(signed portCHAR *)"weight",
-					configMINIMAL_STACK_SIZE,
-					NULL,
-					tskIDLE_PRIORITY,
-					&WeightHandle);	
-
-			// return semaphore
-			xSemaphoreGive( modemUARTSemaphore );
-			xSemaphoreGive(lcdSemaphore);
-
-			// delete boot task
-			vTaskDelete(bootTaskHandle);	
-		}
 	}
 }
 
-/* monModem */
-static void monModem(void * pvParameters)
+
+static void connectGPRS(void *)
 {
 	for(;;)
 	{
-		// Wait for resource
-		if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
+
+		/* It should wait for queue */
+
+		/* Check IP Status and check whether shutdown is required */
+
+		/* Get TCP Status */
+		// TODO: process return value
+		__response = gsm_get_tcpstatus();
+
+		/* lower case the state for comparison */
+		strtolower(modem.tcpstatus);
+
+
+
+		/* Check with predefined APN */
+		if(strstr(modem.getapn, modem.setapn) == NULL)
 		{
-			xSemaphoreGive( modemUARTSemaphore );		
+			/* If both are not matched set access point */
+			// TODO: process return value
+			__response = gsm_set_accesspoint(modem);
 		}
-		vTaskDelay(500);
+
+
+
+		/* Check different state and do what the action required */
+
+		if(gsm_start_gprs())
+		{
+			if(gsm_get_ip_address())
+			{
+				gsm_get_operator();
+				gsm_get_tcpstatus();
+			}
+		}
+
+		/* get access point name */
+		// TODO: process return value
+		__response = gsm_get_accesspoint(modem);
 	}
 }
+
+
+
+static void updateModemStatus(void *)
+{
+	for(;;)
+	{
+
+	}	
+}
+static void displayProcess(void *)
+{
+	for(;;)
+	{
+
+	}	
+}
+static void measureWeight(void *)
+{
+	for(;;)
+	{
+		/* Wait for UART semaphore */
+		if( xSemaphoreTake( measureSema, (portTickType) 10) == pdTRUE)
+		{
+			/* Got resource */
+
+			/* Read the line */
+
+		}
+	}
+}
+
 
 /* monWeight */
 static void monWeight(void * pvParameters)
