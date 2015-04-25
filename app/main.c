@@ -391,9 +391,9 @@ static void establishGPRS(void * pvParameters)
 	{
 		// if(_weight.changed == 1)
 		// {
-			while(changed == 0);
+			/*while(changed == 0);*/
 			debug_out("weight changed http put started\r\n");
-			changed = 0;
+			//changed = 0;
 
 			// Wait for resource
 			if( xSemaphoreTake( modemUARTSemaphore, ( portTickType ) 10 ) == pdTRUE )
