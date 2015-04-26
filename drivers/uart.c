@@ -278,6 +278,14 @@
 		}
 	}
 
+	void uart1_puts(char * ptr, uint32_t len)
+	{
+		for(uint8_t i = 0;i < len;i++)
+		{
+			uart1_putc(ptr[i]);
+		}
+	}
+
 	#ifdef UART1_INTERRUPT_ENABLED
 		/* Declare Ring Buffer */
 		UART_RING_BUFFER uart1_fifo;

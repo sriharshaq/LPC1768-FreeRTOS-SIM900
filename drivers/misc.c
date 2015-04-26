@@ -19,7 +19,14 @@ uint8_t isblankstr(char * str, uint16_t len)
 	return 0;				// not blank
 }
 
-uint8_t strtolower(char * str, uint16_t len)
+uint8_t strtolower(char * str)
 {
-	
+	uint8_t i;
+	for(i = 0;str[i] != '\0';i++)
+	{
+		char c = str[i];
+		if(isalpha(c))
+			str[i] = tolower(c);
+	}
+	return i;
 }

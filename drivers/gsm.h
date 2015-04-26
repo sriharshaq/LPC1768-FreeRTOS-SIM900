@@ -34,6 +34,7 @@
 typedef struct 
 {
 	uint8_t 	rssi;
+	uint8_t		lastsmsloc;
 	uint16_t	http_status;
 
 	char 	* 	tcpstatus;
@@ -51,8 +52,10 @@ typedef struct
 /* modem data struct */
 extern Modem_Type_t modem;
 
+extern void gsm_buff_init(void);
+
 /* process */
-extern int8_t 	gsm_process_response(char *, uint16_t);
+//extern int8_t 	gsm_process_response(char *, uint16_t);
 
 /* query */
 extern int8_t 	gsm_ping_modem(void);
@@ -67,7 +70,8 @@ extern int8_t 	gsm_start_gprs(void);
 extern int8_t 	gsm_get_ip_address(Modem_Type_t *);
 extern int8_t 	gsm_tcp_connect(char *, char *);
 extern int8_t 	gsm_tcp_disconnect(void);
-extern int8_t 	gsm_tcp_send(char);
+extern int8_t 	gsm_send(char);
+extern int8_t 	gsm_tcp_shutdown(void);
 
 /* HTTP */
 extern int8_t	gsm_http_head(char *, char *);
@@ -75,8 +79,10 @@ extern int8_t	gsm_http_get(char *, char *);
 extern int8_t	gsm_http_delete(char *, char *);
 extern int8_t	gsm_http_post(char *, char *, char *);
 extern int8_t	gsm_http_put(char *, char *, char *);
+extern void 	http_read_data(Modem_Type_t *);
 
 /* SMS */
+extern int8_t	gsm_set_text_mode(uint8_t);
 extern int8_t	gsm_send_sms(char *, char *);
 
 #endif

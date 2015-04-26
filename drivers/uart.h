@@ -71,7 +71,7 @@ typedef struct
 		extern char 						uart0_getc(void);
 		extern void							uart0_putc(char);	
 		extern void 						uart0_flushrx();
-		extern void 						uart0_print(char);
+		extern void 						uart0_print(char*);
 		extern int32_t						uart0_readline(void);
 	#endif
 #endif
@@ -86,8 +86,9 @@ typedef struct
 		extern char 						uart1_getc(void);
 		extern void							uart1_putc(char);	
 		extern void 						uart1_flushrx();
-		extern void 						uart1_print(char);
+		extern void 						uart1_print(char*);
 		extern int32_t						uart1_readline(void);
+		extern void 						uart1_puts(char * ptr, uint32_t len);
 	#endif
 #endif
 
@@ -101,7 +102,7 @@ typedef struct
 		extern char 						uart2_getc(void);
 		extern void							uart2_putc(char);	
 		extern void 						uart2_flushrx();
-		extern void 						uart2_print(char);
+		extern void 						uart2_print(char*);
 		extern int32_t						uart2_readline(void);
 	#endif
 #endif
@@ -116,7 +117,7 @@ typedef struct
 		extern char 						uart3_getc(void);
 		extern void							uart3_putc(char);
 		extern void 						uart3_flushrx();
-		extern void 						uart3_print(char);
+		extern void 						uart3_print(char*);
 		extern int32_t						uart3_readline(void);	
 	#endif
 #endif

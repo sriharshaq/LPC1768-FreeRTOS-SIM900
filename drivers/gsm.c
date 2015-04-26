@@ -1,5 +1,3 @@
-
-
 #include "stdint.h"
 #include "stdlib.h"
 #include "uart.h"
@@ -23,12 +21,13 @@ Modem_Type_t modem;
 void gsm_buff_init(void)
 {
 	/* allocate memory */
-	modem.ipstate 	= (char *) malloc(32);
-	modem.apnget 	= (char *) malloc(64);
-	modem.apnset 	= (char *) malloc(64);
-	modem.opr 		= (char *) malloc(64);
-	modem.ip 		= (char *) malloc(32);
-	modem.httpdata 	= (char *) malloc(1024);
+	modem.tcpstatus 	= (char *) malloc(32);
+	modem.setapn 		= (char *) malloc(64);
+	modem.getapn 		= (char *) malloc(64);
+	modem.operator_name = (char *) malloc(64);
+	modem.ip_addr 		= (char *) malloc(32);
+	modem.httpheader 	= (char *) malloc(512);
+	modem.httpdata 		= (char *) malloc(1024);
 }
 
 int8_t process_response(char * ptr, uint16_t len)
@@ -474,6 +473,8 @@ int8_t gsm_get_operator_name(Modem_Type_t * t)
 	*/
 	char * __index = memchr(uart3_fifo.line, '"', len);
 
+	
+
 	if(__index == NULL)
 	{
 		modem_flush_rx();
@@ -487,9 +488,8 @@ int8_t gsm_get_operator_name(Modem_Type_t * t)
 	uint8_t _index_len = strlen(__index);
 
 	/* copy operator name to struct */
-	memcpy(modem->operator_name, __index , _index_len - 3);
-
-
+	memcpy(t->operator_name, __index , _index_len - 3);
+	
 	/* read 3rd line and it should be blank */
 	len 	= modem_readline();
 	resp 	= process_response(uart3_fifo.line,len);
@@ -572,7 +572,7 @@ int8_t gsm_start_gprs(void)
  *  @param 		Modem_Type_t
  *  @return 	int8_t
  */
-int8_t gsm_get_ipaddress(Modem_Type_t * t)
+int8_t gsm_get_ip_address(Modem_Type_t * t)
 {
 	uint16_t len, resp;
 
@@ -737,11 +737,54 @@ int8_t gsm_tcp_connect(char * host, char * port)
 	return __MODEM_UNKNOWN_ERROR;
 }
 
+/** @brief 		Send AT+CIPCLOSE to modem and checks for 'OK'
+ *  @param 		void
+ *  @return 	int8_t
+ */
+int8_t gsm_tcp_shutdown(void)
+{
+	uint16_t len, resp;
+
+	/* send AT+CIPCLOSE to modem */
+	modem_out("AT+CIPSHUT\r");
+
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
+
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
+	{
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
+	}
+
+	/* read 2nd line it should contain __DATA */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
+
+	/* check for __OTHER if not found return error */
+	if(resp != __LINE_OTHER)
+	{
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_OTHER;
+	}
+
+	if(strstr(uart3_fifo.line, "SHUT OK"))
+	{
+		modem_flush_rx();
+		return __LINE_PARSE_SUCCESS;	
+	}
+
+	modem_flush_rx();
+	return __MODEM_LINE_PARSE_ERROR;
+}
+
 /** @brief 		Send AT+CIPSTART to modem and checks for 'CONNECT OK'
  *  @param 		host, port (strings)
  *  @return 	int8_t
  */
-int8_t gsm_tcp_send(char c)
+int8_t gsm_send(char c)
 {
 	/* send AT+CIPSEND to modem */
 	modem_out("AT+CIPSEND\r");
@@ -763,10 +806,11 @@ int8_t gsm_http_head(char * host, char * path)
 {
 	uint8_t state, resp;
 	uint16_t len;
+	char buff[10];
 
 	if(gsm_tcp_connect(host, "80"))
 	{
-		if(gsm_tcp_send('>'))
+		if(gsm_send('>'))
 		{
 
 			/* request type */
@@ -831,10 +875,11 @@ int8_t gsm_http_get(char * host, char * path)
 {
 	uint8_t state, resp;
 	uint16_t len;
+	char buff[10];
 
 	if(gsm_tcp_connect(host, "80"))
 	{
-		if(gsm_tcp_send('>'))
+		if(gsm_send('>'))
 		{
 
 			/* request type */
@@ -882,7 +927,7 @@ int8_t gsm_http_get(char * host, char * path)
 
 			if(strstr(uart3_fifo.line, "SEND OK"))
 			{
-					modem_flush_rx();
+					//modem_flush_rx();
 					return __LINE_PARSE_SUCCESS;
 			}
 		}
@@ -899,12 +944,12 @@ int8_t gsm_http_put(char * host, char * path, char * dat)
 {
 	uint8_t state, resp;
 	uint16_t len;
+	char buff[10];
 
 	if(gsm_tcp_connect(host, "80"))
 	{
-		if(gsm_tcp_send('>'))
+		if(gsm_send('>'))
 		{
-
 			/* request type */
 			modem_out("PUT ");
 			modem_out(path);
@@ -959,7 +1004,7 @@ int8_t gsm_http_put(char * host, char * path, char * dat)
 
 			if(strstr(uart3_fifo.line, "SEND OK"))
 			{
-					modem_flush_rx();
+					//modem_flush_rx();
 					return __LINE_PARSE_SUCCESS;
 			}
 		}
@@ -976,10 +1021,11 @@ int8_t gsm_http_post(char * host, char * path, char * dat)
 {
 	uint8_t state, resp;
 	uint16_t len;
+	char buff[10];
 
 	if(gsm_tcp_connect(host, "80"))
 	{
-		if(gsm_tcp_send('>'))
+		if(gsm_send('>'))
 		{
 
 			/* request type */
@@ -1036,7 +1082,7 @@ int8_t gsm_http_post(char * host, char * path, char * dat)
 
 			if(strstr(uart3_fifo.line, "SEND OK"))
 			{
-					modem_flush_rx();
+					//modem_flush_rx();
 					return __LINE_PARSE_SUCCESS;
 			}
 		}
@@ -1056,7 +1102,7 @@ int8_t gsm_http_delete(char * host, char * path)
 
 	if(gsm_tcp_connect(host, "80"))
 	{
-		if(gsm_tcp_send('>'))
+		if(gsm_send('>'))
 		{
 
 			/* request type */
@@ -1104,11 +1150,173 @@ int8_t gsm_http_delete(char * host, char * path)
 
 			if(strstr(uart3_fifo.line, "SEND OK"))
 			{
-					modem_flush_rx();
+					//modem_flush_rx();
 					return __LINE_PARSE_SUCCESS;
 			}
 		}
 	}
 	modem_flush_rx();
 	return __MODEM_UNKNOWN_ERROR;
+}
+
+int8_t gsm_set_text_mode(uint8_t _mode)
+{
+	uint16_t len, resp;
+
+	/* write AT to modem */
+	modem_out("AT+CMGF=");
+	modem_putc(_mode + 48);
+	modem_putc('\r');
+
+	/* read 1st line it should blank */
+	len 	= modem_readline();
+	resp 	= process_response(uart3_fifo.line,len);
+
+	/* if it's not blank return error */
+	if(resp != __LINE_BLANK)
+	{
+		modem_flush_rx();
+		return __MODEM_LINE_NOT_BLANK;
+	}
+
+	// read 2nd line it should contain 'OK'
+	len = modem_readline();
+
+	resp = process_response(uart3_fifo.line,len);
+
+	if(resp == __LINE_OTHER)
+	{
+		if(strstr(uart3_fifo.line, "OK"))
+		{
+			return __LINE_PARSE_SUCCESS;
+		}
+		else
+		{
+			modem_flush_rx();
+			return __MODEM_LINE_NOT_OK;
+		}
+	}
+
+	modem_flush_rx();
+	return __MODEM_LINE_NOT_OTHER;	
+}
+
+int8_t gsm_send_sms(char * num, char * msg)
+{
+	uint16_t len, resp;
+
+	if(gsm_set_text_mode(1))
+	{
+		/* write AT to modem */
+		modem_out("AT+CMGS=\"");
+		modem_out(num);
+		modem_out("\"\r");
+
+		if(gsm_send('>'))
+		{
+			modem_out(msg);
+			modem_putc(0x1A);	
+
+			/* read 1st line it should be blank */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			/* check for blank if not return error */
+			if(resp != __LINE_BLANK)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_BLANK;
+			}
+
+			/* read 2nd line it should be contain data */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			/* check whether response is data? */
+			if(resp != __LINE_DATA)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_DATA;
+			}
+
+			char * __next;
+			char * __index = index(uart3_fifo.line, ':');
+
+			/* check for result and returns error */
+			if(__index == NULL)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_CS_ERROR;
+			}
+
+			/* +2 for removing :<space> */
+			__index += 2;
+
+			int8_t loc = strtol(__index, &__next, 10);
+
+			modem.lastsmsloc = loc;
+
+			/* read 3rd line it should be blank */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			// check whether blank line
+			if(resp != __LINE_BLANK)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_BLANK;
+			}
+
+
+			/* read 3rd line it should be 'OK' */
+			len 	= modem_readline();
+			resp 	= process_response(uart3_fifo.line,len);
+
+			/* check for __OTHER */
+			if(resp != __LINE_OTHER)
+			{
+				modem_flush_rx();
+				return __MODEM_LINE_NOT_OTHER;
+			}
+
+			/* check for 'OK' */
+			if(strstr(uart3_fifo.line, "OK"))
+			{
+				modem_flush_rx();
+				return __LINE_PARSE_SUCCESS;
+			}
+
+			modem_flush_rx();
+			return __MODEM_LINE_NOT_OK;
+		}
+	}
+	modem_flush_rx();
+	return __MODEM_UNKNOWN_ERROR;
+}
+
+void http_read_data(Modem_Type_t * t)
+{
+	uint16_t len;
+	len = modem_readline();
+
+	debug_out(uart3_fifo.line);
+
+	do
+	{
+		len = modem_readline();
+	}
+	while(isblankstr(uart3_fifo.line, len) != 1);
+
+	debug_out("data enter\r\n");
+	uint16_t _i = 0;
+	while(uart3_fifo.num_bytes > 0)
+	{
+		char c = uart3_getc();
+		t->httpdata[_i++] = c;
+		_delay_us(10);
+	}
+	debug_out("data\r\n");
+	t->httpdata[_i] = '\0';
+	debug_out(t->httpdata);
+	debug_out("\r\n");
 }

@@ -13,6 +13,7 @@ LDSCRIPT 		= scripts/lpc17xx.ld
 
 # Output image name
 IMAGE 			= app.elf	
+HEXFILE			= app.hex
 
 # Include paths
 INC = 	-Idevice \
@@ -41,7 +42,6 @@ VPATH = device: \
 # Object Files
 OBJS	=	main.o \
 			uart.o misc.o lcd.o delay.o gsm.o \
-			jsmn.o \
 			list.o queue.o tasks.o timers.o port.o heap_2.o \
 			lpc17xx.o system_LPC17xx.o \
 			_errno.o _exit.o _fclose.o _fopen.o _free.o _kill.o _malloc.o _open.o _write.o \
@@ -210,6 +210,7 @@ LFLAGS 				= -g -Wall -Os -mthumb -mcpu=$(CPU) -nostartfiles -nodefaultlibs -T$(
 # Target (make all will invoke)
 all: 	$(OBJS)
 		$(CC)gcc $(LFLAGS) $(OBJS) -o $(IMAGE) 
+		$(CC)objcopy -O ihex $(IMAGE) $(HEXFILE)
 		$(CC)size $(IMAGE)
 
 clean: 	$(OBJS)

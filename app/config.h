@@ -2,14 +2,14 @@
 #ifndef __config_h__
 #define __config_h__
 
-/* DEBUG INFOS */
-#define PROCESS_DEBUG_INFO_LEVEL			0
-#define APPLICATION_LOG_LEVEL				0
-#define LCD_INIT_PRINT						0
+#define 	__DEBUG_MESSAGES__
 
-/* TESTS */
-#define MALLOC_TEST							1
+#define __UART0_BAUDRATE 9600
+#define __UART1_BAUDRATE 9600
+#define __UART3_BAUDRATE 9600
 
-extern char debug_buff[64];
+#define debug_out(ptr) 	uart1_print(ptr)
+#define debug_puts(ptr, l)	uart1_puts(ptr, l)
+#define debug_putc(c)	uart1_putc(c)
 
 #endif
