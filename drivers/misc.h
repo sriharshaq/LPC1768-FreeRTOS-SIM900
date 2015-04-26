@@ -3,5 +3,6 @@
 #define __misc_h__
 
 extern uint8_t isblankstr(char *, uint16_t);
+extern uint8_t strtolower(char *);
 
 #endif

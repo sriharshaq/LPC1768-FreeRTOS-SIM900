@@ -6,14 +6,14 @@
 
 /******* Enable/Disable uarts     */
 #define __UART0_ENABLED
-//#define __UART1_ENABLED
+#define __UART1_ENABLED
 //#define __UART2_ENABLED
 #define __UART3_ENABLED
 /**********************************/
 
 /******* Enable/Disable interrupts */
 #define UART0_INTERRUPT_ENABLED
-//#define UART1_INTERRUPT_ENABLED
+#define UART1_INTERRUPT_ENABLED
 //#define UART2_INTERRUPT_ENABLED
 #define UART3_INTERRUPT_ENABLED
 /**********************************/
@@ -41,6 +41,7 @@
 
 
 #define LF '\n'
+#define CR '\r'
 
 /* UART RING BUFFER STRUCTURE */
 typedef struct
@@ -62,52 +63,61 @@ typedef struct
 
 #ifdef __UART0_ENABLED
 	#ifdef 	UART0_INTERRUPT_ENABLED
-		#define UART0_RX_FIFO_SIZE			1024
-		#define UART0_LINE_SIZE				512
+		#define UART0_RX_FIFO_SIZE			127
+		#define UART0_LINE_SIZE				127
 
 		extern 	UART_RING_BUFFER 			uart0_fifo;
 		extern void 						uart0_init(uint32_t);
 		extern char 						uart0_getc(void);
 		extern void							uart0_putc(char);	
+		extern void 						uart0_flushrx();
+		extern void 						uart0_print(char*);
 		extern int32_t						uart0_readline(void);
 	#endif
 #endif
 
 #ifdef __UART1_ENABLED
 	#ifdef 	UART1_INTERRUPT_ENABLED
-		#define UART1_RX_FIFO_SIZE			1024
-		#define UART1_LINE_SIZE				512
+		#define UART1_RX_FIFO_SIZE			127
+		#define UART1_LINE_SIZE				127
 
 		extern 	UART_RING_BUFFER 			uart1_fifo;
 		extern void 						uart1_init(uint32_t);
 		extern char 						uart1_getc(void);
 		extern void							uart1_putc(char);	
+		extern void 						uart1_flushrx();
+		extern void 						uart1_print(char*);
 		extern int32_t						uart1_readline(void);
+		extern void 						uart1_puts(char * ptr, uint32_t len);
 	#endif
 #endif
 
 #ifdef __UART2_ENABLED
 	#ifdef 	UART2_INTERRUPT_ENABLED
-		#define UART2_RX_FIFO_SIZE			1024
-		#define UART2_LINE_SIZE				512
+		#define UART2_RX_FIFO_SIZE			127
+		#define UART2_LINE_SIZE				127
 
 		extern 	UART_RING_BUFFER 			uart2_fifo;
 		extern void 						uart2_init(uint32_t);
 		extern char 						uart2_getc(void);
 		extern void							uart2_putc(char);	
+		extern void 						uart2_flushrx();
+		extern void 						uart2_print(char*);
 		extern int32_t						uart2_readline(void);
 	#endif
 #endif
 
 #ifdef __UART3_ENABLED
 	#ifdef 	UART3_INTERRUPT_ENABLED
-		#define UART3_RX_FIFO_SIZE			1024
-		#define UART3_LINE_SIZE				512
+		#define UART3_RX_FIFO_SIZE			(1024 * 4)
+		#define UART3_LINE_SIZE				1024
 
 		extern 	UART_RING_BUFFER 			uart3_fifo;
 		extern void 						uart3_init(uint32_t);
 		extern char 						uart3_getc(void);
 		extern void							uart3_putc(char);
+		extern void 						uart3_flushrx();
+		extern void 						uart3_print(char*);
 		extern int32_t						uart3_readline(void);	
 	#endif
 #endif

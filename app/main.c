@@ -8,6 +8,9 @@
 /* driver includes */
 #include "uart.h"
 #include "misc.h"
+#include "lcd.h"
+#include "delay.h"
+#include "gsm.h"
 
 /* device includes */
 #include "system_LPC17xx.h"
@@ -28,39 +31,121 @@
 #include "task.h"
 #include "semphr.h"
 
+/* application config */
+#include "config.h"
+
 /* streams (stdout, stdin, stderr) */
 FILE * stdin;
 FILE * stdout;
 FILE * stderr;
 
-/* protos */
-void prvSetupHardware(void);
-void debug_out(char *);
-void modem_out(char *);
-uint8_t process_response(char * ptr, uint16_t len);
+/* Define how many number of operator or apn we have (opr and apn array length should be same) */
+#define APN_OPR_LIST_LEN 8
 
-/* process */
-static void sysboot(void * pvParameters);
-static void monModem(void * pvParameters);
-static void establishGPRS(void * pvParameters);
+/* Setup Hardware Function */
+void 	prvSetupHardware(void);
 
-xSemaphoreHandle xSemaphore;
+/* Tasks */
+static void systemBoot(void * pvParameters);
+static void connectGPRS(void * pvParameters);
+static void updateModemStatus(void * pvParameters);
+static void displayProcess(void * pvParameters);
+static void scanCard(void * pvParameters);
+static void httpProc(void * pvParameters);
 
-char debug_buff[64];
+/* Semaphores */
+xSemaphoreHandle modemSema;
+xSemaphoreHandle displaySema;
+xSemaphoreHandle scanCardSema;
 
-xTaskHandle monTaskHandle, bootTaskHandle, GPRStaskHandle;
+#ifdef __DEBUG_MESSAGES__
+	xSemaphoreHandle debugSema;
+#endif
 
+/* Task Handles */
+xTaskHandle systemBootHandle;
+xTaskHandle connectGPRSHandle;
+xTaskHandle updateModemStatusHandle;
+xTaskHandle displayProcessHandle;
+xTaskHandle scanCardHandle;
+xTaskHandle httpTaskHandle;
+
+/* Queues */
+xQueueHandle httpQueue;
+
+/* List of operators */
+const char * oprList[]	=	{	
+								"airtel",
+								"cellone",
+								"idea",
+								"aircel",
+								"tata docomo",
+								"t24",
+								"reliance",
+								"vodafone"
+							};
+
+/* List of Access Points for different operator */
+const char * apnList[]	=	{	
+								"airtelgprs.com",
+								"bsnlnet",
+								"internet",
+								"aircelgprs.pr",
+								"TATA.DOCOMO.INTERNET",
+								"TATA.DOCOMO.INTERNET",
+								"rcomnet",
+								"www"
+							};
+
+/** @brief 
+ *  @param 
+ *  @return 
+ */
+void prvSetupHardware(void)
+{
+	SystemInit();
+	SystemCoreClockUpdate();
+
+	/* init uart's */
+	uart0_init(__UART0_BAUDRATE);				// RFID Reader port
+	uart1_init(__UART1_BAUDRATE);				// debug port
+	uart3_init(__UART3_BAUDRATE);				// modem port
+
+	/* initiate lcd */
+	lcd_init();									// init lcd
+
+	/* init buffers for gsm modem */
+	gsm_buff_init();
+}
+
+
+/** @brief 
+ *  @param 
+ *  @return 
+ */
 int main(void)
 {
 	/* Setup the Hardware */
 	prvSetupHardware();
 
-	xTaskCreate(sysboot,
-			(signed portCHAR *)"sysboot",
-			configMINIMAL_STACK_SIZE,
-			NULL,
-			tskIDLE_PRIORITY,
-			&bootTaskHandle);
+	#ifdef __DEBUG_MESSAGES__
+		debug_out("system started\r\n");
+		debug_out("hardware setup completed\r\n");
+		debug_out("creating the tasks\r\n");
+	#endif
+
+	/* Create Boot Task */
+	xTaskCreate(	systemBoot,
+					(signed portCHAR *)"boot",
+					configMINIMAL_STACK_SIZE,
+					NULL,
+					tskIDLE_PRIORITY,
+					&systemBootHandle);
+
+	#ifdef __DEBUG_MESSAGES__
+		debug_out("boot task created\r\n");
+		debug_out("starting the os\r\n");
+	#endif
 
 	/* Start the scheduler */
 	vTaskStartScheduler();
@@ -69,458 +154,501 @@ int main(void)
 	return 0;
 }
 
-/* setup hardware */
-void prvSetupHardware(void)
+/** @brief 
+ *  @param 
+ *  @return 
+ */
+static void systemBoot(void * pvParameters)
 {
-	SystemInit();
-	SystemCoreClockUpdate();
-	uart0_init(9600);
-	uart3_init(9600);
-	debug_out("system started\r\n");
-}
-
-/* debug print */
-void debug_out(char * ptr)
-{
-	for(uint8_t i = 0;ptr[i] != '\0';i++)
-	{
-		uart0_putc(ptr[i]);
-	}
-}
-
-/* modem print */
-void modem_out(char * ptr)
-{
-	for(uint8_t i = 0;ptr[i] != '\0';i++)
-	{
-		uart3_putc(ptr[i]);
-	}
-}
-
-/*
-************* AT Commands *************************************
-
-	Types: 
-	-----------------------------------------------------------
- 	1. 	Test Command:
-		AT+<x>=?
-
-	2.	Read Command:
-		AT+<x>?
-
-	3.	Write Command
-		AT+<x>=<...>
-
-	4. Execution command
-		AT+<x>
-	-----------------------------------------------------------
-
-	-----------------------------------------------------------
-	Response
-	-----------------------------------------------------------
-	<CR><LF><responce><CR><LF>
-	-----------------------------------------------------------
-
-	-----------------------------------------------------------
-	Example:
-	-----------------------------------------------------------
-		Commands		: 	AT
-		Type 			: 	Read Command
-		Response		: 	OK
-		Raw Response	:	<CR><LF>OK<CR><LF>
-	-----------------------------------------------------------
-*/
-
-/* DEBUG INFOS */
-#define PROCESS_DEBUG_INFO_LEVEL			1
-#define APPLICATION_LOG_LEVEL				1
-
-/* TESTS */
-#define MALLOC_TEST							1
-
-/* modem response line types */
-#define __LINE_BLANK 	0
-#define __LINE_DATA		1
-#define __LINE_ERROR 	2
-#define __LINE_OTHER	3
-
-uint8_t process_response(char * ptr, uint16_t len)
-{
-	if(isblankstr(uart3_fifo.line, len))
-	{
-		// this is blank line
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("blank line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
-		return __LINE_BLANK;
-	}
-
-	// Check for data
-	else if(memchr(ptr, '+', len) && memchr(ptr, ':', len))
-	{
-		// this is data
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("data line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
-		return __LINE_DATA;
-	}
-
-	// Check for errors
-	else if(strstr(ptr,"ERROR") != NULL)
-	{
-		// this is error
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("error line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
-		return __LINE_ERROR;
-	}
-
-	// otherwise ?
-	else
-	{
-		// this is ok
-		#if PROCESS_DEBUG_INFO_LEVEL == 1 || PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out("other line\r\n");
-		#endif
-		#if PROCESS_DEBUG_INFO_LEVEL == 2
-			debug_out(ptr);
-			debug_out("\r\n");
-		#endif
-
-		return __LINE_OTHER;
-	}
-}
-
-/* processA */
-static void sysboot(void * pvParameters)
-{
+	int8_t __response;
 	for(;;)
 	{
-		uint16_t len;
-		xSemaphore = xSemaphoreCreateMutex();
+		/* create semaphores */
+		modemSema 			= xSemaphoreCreateMutex();
+		displaySema			= xSemaphoreCreateMutex();
+		scanCardSema		= xSemaphoreCreateMutex();
+		debugSema			= xSemaphoreCreateMutex();
 
-		#if APPLICATION_LOG_LEVEL == 1
-				debug_out("system botting\r\n");
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
 				debug_out("semaphore created\r\n");
-		#endif
-
-		if(xSemaphore == NULL){
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("semaphore create failed\r\n");
-			#endif
-		}
-		else{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("semaphore create success\r\n");
-			#endif
-		}
-
-		#if MALLOC_TEST == 1
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("malloc test started\r\n");
-			#endif
-			char * c;
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("allocating 1024 bytes\r\n");
-			#endif
-			c = (char *) malloc(1024);
-			if(c != NULL)
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("malloc ok\r\n");
-				#endif
+				debug_out("ping modem\r\n");
+				xSemaphoreGive(debugSema);
 			}
-			else
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("malloc fail\r\n");
-				#endif
-			}
-			#if APPLICATION_LOG_LEVEL == 1 
-				debug_out("free 1024 bytes\r\n");
-				debug_out("free 1024 bytes success\r\n");
-			#endif
-			free(c);
 		#endif
 
-
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("creating tasks\r\n");
-		#endif
-
-		// monitor modem
-		xTaskCreate(monModem,
-				(signed portCHAR *)"monModem",
-				configMINIMAL_STACK_SIZE,
-				NULL,
-				tskIDLE_PRIORITY,
-				&monTaskHandle);
-
-		// create task and resume until OK is received from above task
-		xTaskCreate(establishGPRS,
-				(signed portCHAR *)"GPRS",
-				configMINIMAL_STACK_SIZE,
-				NULL,
-				tskIDLE_PRIORITY,
-				&GPRStaskHandle);
-
-		if(monTaskHandle != NULL)
+		for(uint8_t i = 0;i < 8;i++)
 		{
-			//vTaskSuspend(monModem);
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("monModem task create success now suspended\r\n");
-			#endif			
+			if(gsm_ping_modem())
+			{
+				debug_out("PING: ");
+				debug_putc(i + 48); 
+				debug_out("\r\n");
+			}	
 		}
+
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("reading operator name from modem\r\n");
+				xSemaphoreGive(debugSema);
+			}
+		#endif
+
+		/* Get operator name */
+		// TODO: process return value
+		__response = gsm_get_operator_name(&modem);
+
+		/* convert to lower for comparison */
+		strtolower(modem.operator_name);
+
+		/* find out apn */
+		for(uint8_t i = 0;i < APN_OPR_LIST_LEN;i++)
+		{
+			if(strstr(modem.operator_name, oprList[i]))
+			{
+				strcpy(modem.setapn, apnList[i]);
+				break;
+			}
+		}
+
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("apn search completed\r\n");
+				debug_out("access point name for operator ");
+				debug_out(modem.operator_name);
+				debug_out(" is ");
+				debug_out(modem.setapn);
+				debug_out("\r\n");
+				xSemaphoreGive(debugSema);
+			}
+		#endif
+
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("reading apn from modem\r\n");
+				xSemaphoreGive(debugSema);
+			}
+		#endif
+
+		/* read apn from modem */
+		__response = gsm_get_accesspoint(&modem);
+
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("read apn completed\r\n");
+				debug_out("access point read from modem: ");
+				debug_out(modem.getapn);
+				debug_out("\r\n");
+				xSemaphoreGive(debugSema);
+			}
+		#endif
+
+		/* Check with predefined APN */
+		if(strstr(modem.getapn, modem.setapn) == NULL)
+		{
+			/* If both are not matched set access point */
+			// TODO: process return value
+			//__response = gsm_set_accesspoint(&modem);
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("access point read from modem is different from actual\r\n");
+					debug_out("So setting actual accesspoint name\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif
+
+			__response = gsm_set_accesspoint(&modem);
+
+			if(__response)
+			{
+				#ifdef __DEBUG_MESSAGES__
+					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						debug_out("set accesspoint name success\r\n");
+						debug_out("reading apn again from modem\r\n");
+						xSemaphoreGive(debugSema);
+					}
+				#endif		
+
+				__response = gsm_get_accesspoint(&modem);
+				#ifdef __DEBUG_MESSAGES__
+					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						debug_out("read apn completed\r\n");
+						debug_out("apn name read: ");
+						debug_out(modem.getapn);
+						debug_out(", actual: ");
+						debug_out(modem.setapn);
+						debug_out("\r\n");
+						xSemaphoreGive(debugSema);
+					}
+				#endif					
+			}
+		}
+
 		else
 		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("monModem task create error\r\n");
-			#endif		
-		}
-
-		if(GPRStaskHandle != NULL)
-		{
-			//vTaskSuspend(GPRStaskHandle);
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("establishGPRS task create success now suspended\r\n");
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("modem has valid apn no need to set\r\n");
+					xSemaphoreGive(debugSema);
+				}
 			#endif			
 		}
-		else
+
+		/* Create GPRS Task */
+		xTaskCreate(	connectGPRS,
+						(signed portCHAR *)"gprs",
+						configMINIMAL_STACK_SIZE,
+						NULL,
+						tskIDLE_PRIORITY,
+						&connectGPRSHandle);
+
+		/* Create GPRS Task */
+		xTaskCreate(	httpProc,
+						(signed portCHAR *)"gprs",
+						configMINIMAL_STACK_SIZE,
+						NULL,
+						tskIDLE_PRIORITY,
+						&httpTaskHandle);
+		/* Create GPRS Task */
+		xTaskCreate(	scanCard,
+						(signed portCHAR *)"rfid",
+						configMINIMAL_STACK_SIZE,
+						NULL,
+						tskIDLE_PRIORITY,
+						&scanCardHandle);
+
+		xSemaphoreGive(scanCardSema);
+
+		/* delete the boot task */
+		vTaskDelete(systemBootHandle);
+
+	}
+}
+
+
+static void connectGPRS(void * pvParameters)
+{
+	int8_t __response;
+
+	uint8_t __flag = 1;
+
+	/* create queue */
+	httpQueue = xQueueCreate(5, sizeof(uint8_t));
+
+	#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("GPRS task started\r\n");
+				xSemaphoreGive(debugSema);
+			}
+	#endif
+
+	for(;;)
+	{
+		/* Check IP Status and check whether shutdown is required */
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("reading tcp status from modem\r\n");
+				xSemaphoreGive(debugSema);
+			}
+		#endif
+
+		/* Get TCP Status */
+		__response = gsm_get_tcpstatus(&modem);
+
+		/* lower case the state for comparison */
+		strtolower(modem.tcpstatus);
+
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("reading tcp status completed\r\n");
+				debug_out("status: ");
+				debug_out(modem.tcpstatus);
+				debug_out("\r\n");
+				xSemaphoreGive(debugSema);
+			}
+		#endif
+
+		/* check tcpstatus and do what action is required to bring wireless up */
+		if(strstr(modem.tcpstatus, "ip start") || strstr(modem.tcpstatus, "ip initial"))
 		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("establishGPRS task create error\r\n");
-			#endif		
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("ip start state bringing wireless up\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif				
+			if(gsm_start_gprs())
+			{
+				#ifdef __DEBUG_MESSAGES__
+					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						debug_out("GPRS start success\r\n");
+						debug_out("reading ip address\r\n");
+						xSemaphoreGive(debugSema);
+					}
+				#endif	
+				if(gsm_get_ip_address(&modem))
+				{
+					#ifdef __DEBUG_MESSAGES__
+						if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							debug_out("Read IP address success\r\n");
+							debug_out(modem.ip_addr);
+							xSemaphoreGive(debugSema);
+						}
+					#endif	
+				}
+			}
 		}
-
-		#if APPLICATION_LOG_LEVEL == 1
-			debug_out("resuming monModem task\r\n");
-		#endif		
-		
-		// resume the task
-		vTaskResume(monModem);
-
-		if( xSemaphoreTake( xSemaphore, ( portTickType ) 10 ) == pdTRUE )
+		else if(strstr(modem.tcpstatus, "ip config"))
 		{
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("returning semaphore\r\n");
-			#endif
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("deleting boot task\r\n");
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("ip configure\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif				
+		}
+		else if(strstr(modem.tcpstatus, "ip gprsact") || strstr(modem.tcpstatus, "ip status"))
+		{
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("gprs act\r\n");
+					xSemaphoreGive(debugSema);
+				}
 			#endif	
 
-			// return semaphore
-			xSemaphoreGive( xSemaphore );
-
-			// delete boot task
-			vTaskDelete(bootTaskHandle);	
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("reading ip address\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif	
+			if(gsm_get_ip_address(&modem))
+			{
+				#ifdef __DEBUG_MESSAGES__
+					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						debug_out("Read IP address success\r\n");
+						debug_out(modem.ip_addr);
+						xSemaphoreGive(debugSema);
+					}
+				#endif	
+			}
 		}
+		else if(strstr(modem.tcpstatus, "tcp connecting"))
+		{
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("connecting\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif				
+		}
+		else if(strstr(modem.tcpstatus, "connect ok"))
+		{
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("connect ok\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif	
+			if(gsm_tcp_disconnect())
+			{
+				#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("disconnect OK\r\n");
+					xSemaphoreGive(debugSema);
+				}
+				#endif	
+			}			
+		}
+		else if(strstr(modem.tcpstatus, "tcp closing"))
+		{
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("tcp closing\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif				
+		}
+		else if(strstr(modem.tcpstatus, "tcp closed"))
+		{
+			#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("tcp closed\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif				
+		}
+		else if(strstr(modem.tcpstatus, "pdp deact"))
+		{
+				// FIXME: What to do?
+				#ifdef __DEBUG_MESSAGES__
+				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("pdp deactivated shutdown is required\r\n");
+					xSemaphoreGive(debugSema);
+				}
+			#endif			
+		}
+
+		#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("task is no more required suspending\r\n");
+				xSemaphoreGive(debugSema);
+			}
+		#endif
+
+
+
+		if( xQueueSend( httpQueue, ( void * ) &__flag, ( portTickType ) 10 ) != pdPASS )
+        {
+            if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				debug_out("failed to send to queue\r\n");
+				xSemaphoreGive(debugSema);
+			}
+        }
+
+		/* suspend the task */
+		vTaskSuspend(connectGPRSHandle);
 	}
 }
 
-/* monModem */
-static void monModem(void * pvParameters)
+static void httpProc(void * pvParameters)
 {
-	uint16_t len, resp;
+	uint8_t __value;
+	uint8_t __flag = 0;
 	for(;;)
 	{
-		// Wait for resource
-		if( xSemaphoreTake( xSemaphore, ( portTickType ) 10 ) == pdTRUE )
+	    if( httpQueue != 0 )
+	    {
+	        if( xQueueReceive( httpQueue, &( __value ), ( portTickType ) 10 ) )
+	        {
+				#ifdef __DEBUG_MESSAGES__
+					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						debug_out("msg receied started http\r\n");
+						xSemaphoreGive(debugSema);
+					}
+				#endif	
+
+				__flag = 1;
+			}
+		}
+
+		/*if(__flag == 1)
 		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("sending 'AT'\r\n");
-			#endif
-
-			// send 'AT'
-			modem_out("AT\r");
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("'AT' sent\r\n");
-				debug_out("reading 1st line\r\n");
-			#endif
-
-			// Expected first line is blank
-			len = uart3_readline();
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("read 1st line\r\n");
-				debug_out("processing line, expected is blank\r\n");
-			#endif
-
-			resp = process_response(uart3_fifo.line,len);
-
-			// check whether blank line
-			if(resp == __LINE_BLANK)
+			if(gsm_http_get("lit-taiga-2854.herokuapp.com","/weight/1"))
 			{
-				debug_out("got __BLANK line\r\n");
-			}
+				http_read_data(&modem);
 
-			// else display error
-			// TODO: retry before going to further step
-			else
-			{
-				debug_out("error expected is __BLANK, but got something else\r\n");
-				sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-				debug_out(debug_buff);
-			}
-
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("reading 2nd line\r\n");
-			#endif
-
-			// read 2nd line
-			len = uart3_readline();
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("read 2nd line\r\n");
-				debug_out("processing line, expected is __OTHER line\r\n");
-			#endif
-
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_OTHER)
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("got __OTHER line\r\n");
-					debug_out("searching for 'OK'\r\n");
-				#endif
-				if(strstr(uart3_fifo.line, "OK"))
+				if(gsm_tcp_disconnect())
 				{
-					#if APPLICATION_LOG_LEVEL == 1
-						debug_out("found ok\r\n");
-						debug_out("'AT' 'OK' success\r\n");
-					#endif
+					#ifdef __DEBUG_MESSAGES__
+						if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							debug_out("tcp disconnect success\r\n");
+							xSemaphoreGive(debugSema);
+						}
+					#endif					
 				}
 				else
 				{
-					debug_out("error expected is __OTHER, but got something else\r\n");
-					sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-					debug_out(debug_buff);
-				}
-			}
-			else
-			{
-				debug_out("'OK' not found\r\n");
-				sprintf(debug_buff, "line: %s", uart3_fifo.line);
-				debug_out(debug_buff);
-			}
-
-			// Return semaphore
-			xSemaphoreGive( xSemaphore );
-		}
-		vTaskDelay(2000);
-	}
-}
-
-/* establishGPRS */
-static void establishGPRS(void * pvParameters)
-{
-	uint16_t len, resp;
-	for(;;)
-	{
-		// Wait for resource
-		if( xSemaphoreTake( xSemaphore, ( portTickType ) 10 ) == pdTRUE )
-		{
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("sending 'AT'\r\n");
-			#endif
-
-			// send 'AT'
-			modem_out("AT\r");
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("'AT' sent\r\n");
-				debug_out("reading 1st line\r\n");
-			#endif
-
-			// Expected first line is blank
-			len = uart3_readline();
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("read 1st line\r\n");
-				debug_out("processing line, expected is blank\r\n");
-			#endif
-
-			resp = process_response(uart3_fifo.line,len);
-
-			// check whether blank line
-			if(resp == __LINE_BLANK)
-			{
-				debug_out("got __BLANK line\r\n");
-			}
-
-			// else display error
-			// TODO: retry before going to further step
-			else
-			{
-				debug_out("error expected is __BLANK, but got something else\r\n");
-				sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-				debug_out(debug_buff);
-			}
-
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("reading 2nd line\r\n");
-			#endif
-
-			// read 2nd line
-			len = uart3_readline();
-
-			#if APPLICATION_LOG_LEVEL == 1
-				debug_out("read 2nd line\r\n");
-				debug_out("processing line, expected is __OTHER line\r\n");
-			#endif
-
-			resp = process_response(uart3_fifo.line,len);
-
-			if(resp == __LINE_OTHER)
-			{
-				#if APPLICATION_LOG_LEVEL == 1
-					debug_out("got __OTHER line\r\n");
-					debug_out("searching for 'OK'\r\n");
-				#endif
-				if(strstr(uart3_fifo.line, "OK"))
-				{
-					#if APPLICATION_LOG_LEVEL == 1
-						debug_out("found ok\r\n");
-						debug_out("'AT' 'OK' success\r\n");
+					#ifdef __DEBUG_MESSAGES__
+					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						debug_out("tcp disconnect failed\r\n");
+						xSemaphoreGive(debugSema);
+					}
 					#endif
 				}
-				else
-				{
-					debug_out("error expected is __OTHER, but got something else\r\n");
-					sprintf(debug_buff, "resp: %d, line: %s", resp, uart3_fifo.line);
-					debug_out(debug_buff);
-				}
-			}
-			else
-			{
-				debug_out("'OK' not found\r\n");
-				sprintf(debug_buff, "line: %s", uart3_fifo.line);
-				debug_out(debug_buff);
-			}
-
-			// Return semaphore
-			xSemaphoreGive( xSemaphore );
-		}
-		vTaskDelay(2000);
+			}			
+		}*/
 	}
 }
+
+
+static void updateModemStatus(void * pvParameters)
+{
+	for(;;)
+	{
+
+	}	
+}
+
+static void displayProcess(void * pvParameters)
+{
+	for(;;)
+	{
+
+	}	
+}
+
+static void scanCard(void * pvParameters)
+{
+	uint8_t len;
+	uint8_t i = 0;
+	uint8_t scanCompleted = 0;
+	char card_no[15];
+
+	char rfid[15];
+
+	#ifdef __DEBUG_MESSAGES__
+			if( xSemaphoreTake( debugSema, ( portTickType ) 500 ) == pdTRUE )
+			{
+				debug_out("Scanning task started\r\n");
+				xSemaphoreGive(debugSema);
+			}
+	#endif
+	for(;;)
+	{
+		if(uart0_fifo.num_bytes > 0)
+		{
+			char c = uart0_getc();
+			card_no[i++] = c;
+		}
+
+		if(i == 12)
+		{
+			memcpy(rfid, card_no, 10);
+			rfid[10] = '\0';
+			i = 0;
+
+			/* send signal to http process */
+			if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+			{
+				debug_out("no: ");
+				debug_out(rfid);
+				debug_out("\r\n");
+				xSemaphoreGive(debugSema);
+			}	
+		}	
+	}	
+}
+
+
 
