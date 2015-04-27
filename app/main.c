@@ -72,6 +72,7 @@ xTaskHandle httpTaskHandle;
 
 /* Queues */
 xQueueHandle httpQueue;
+xQueueHandle lcdQueue;
 
 /* List of operators */
 const char * oprList[]	=	{	
@@ -303,6 +304,12 @@ static void systemBoot(void * pvParameters)
 			#endif			
 		}
 
+		/* create queue */
+		httpQueue = xQueueCreate(10, sizeof(uint8_t));
+
+		xSemaphoreGive(scanCardSema);
+		xSemaphoreGive(modemSema);
+
 		/* Create GPRS Task */
 		xTaskCreate(	connectGPRS,
 						(signed portCHAR *)"gprs",
@@ -318,6 +325,7 @@ static void systemBoot(void * pvParameters)
 						NULL,
 						tskIDLE_PRIORITY,
 						&httpTaskHandle);
+
 		/* Create GPRS Task */
 		xTaskCreate(	scanCard,
 						(signed portCHAR *)"rfid",
@@ -326,7 +334,13 @@ static void systemBoot(void * pvParameters)
 						tskIDLE_PRIORITY,
 						&scanCardHandle);
 
-		xSemaphoreGive(scanCardSema);
+		/* Create GPRS Task */
+		xTaskCreate(	displayProcess,
+						(signed portCHAR *)"rfid",
+						configMINIMAL_STACK_SIZE,
+						NULL,
+						tskIDLE_PRIORITY,
+						&displayProcessHandle);
 
 		/* delete the boot task */
 		vTaskDelete(systemBootHandle);
@@ -338,11 +352,6 @@ static void systemBoot(void * pvParameters)
 static void connectGPRS(void * pvParameters)
 {
 	int8_t __response;
-
-	uint8_t __flag = 1;
-
-	/* create queue */
-	httpQueue = xQueueCreate(5, sizeof(uint8_t));
 
 	#ifdef __DEBUG_MESSAGES__
 			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
@@ -560,34 +569,6 @@ static void httpProc(void * pvParameters)
 			}
 		}
 
-		/*if(__flag == 1)
-		{
-			if(gsm_http_get("lit-taiga-2854.herokuapp.com","/weight/1"))
-			{
-				http_read_data(&modem);
-
-				if(gsm_tcp_disconnect())
-				{
-					#ifdef __DEBUG_MESSAGES__
-						if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							debug_out("tcp disconnect success\r\n");
-							xSemaphoreGive(debugSema);
-						}
-					#endif					
-				}
-				else
-				{
-					#ifdef __DEBUG_MESSAGES__
-					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						debug_out("tcp disconnect failed\r\n");
-						xSemaphoreGive(debugSema);
-					}
-					#endif
-				}
-			}			
-		}*/
 	}
 }
 
