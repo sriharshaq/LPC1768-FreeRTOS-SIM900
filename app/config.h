@@ -15,14 +15,5 @@
 #define debug_puts(ptr, l)	uart1_puts(ptr, l)
 #define debug_putc(c)		uart1_putc(c)
 
-typedef struct
-{
-	char card[10];
-}CardType_t;
-
-typedef struct 
-{
-	char card[10];
-}KeypadType_t;
 
 #endif

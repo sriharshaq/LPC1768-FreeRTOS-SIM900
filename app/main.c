@@ -276,9 +276,9 @@ static void systemBoot(void * pvParameters)
 
 		/* create queues */
 		//////////////////////////////////////////////////////
-		httpQueue  	= xQueueCreate(10, sizeof(CardType_t));
-		lcdQueue   	= xQueueCreate(10, sizeof(CardType_t));
-		keypadQueue = xQueueCreate(10, sizeof(KeypadType_t));
+		httpQueue  	= xQueueCreate(10, 6);
+		lcdQueue   	= xQueueCreate(10, sizeof(uint8_t     ));
+		keypadQueue = xQueueCreate(10, sizeof(char));
 		//////////////////////////////////////////////////////
 
 		#ifdef __DEBUG_MESSAGES__
@@ -496,14 +496,14 @@ static void connectGPRS(void * pvParameters)
 
 static void httpProc(void * pvParameters)
 {
-	CardType_t * _card;
+	uint8_t i;
 	for(;;)
 	{
 		/* check whether queue is created successfully */
 	    if( httpQueue != 0 )
 	    {
 	    	/* Wait for queue */
-	        if( xQueueReceive( httpQueue, &( _card ), ( portTickType ) 10 ) )
+	        if( xQueueReceive( httpQueue, &( i ), ( portTickType ) 10 ) )
 	        {
 	        	/* send card number to server and get validation result */
 
@@ -513,7 +513,7 @@ static void httpProc(void * pvParameters)
 	        		/* got resource */
 
 	        		/* send card number to server and get validation result */
-	        		if()
+	        		
 
 	        	}
 	        	else
@@ -546,11 +546,10 @@ static void displayProcess(void * pvParameters)
 static void scanCard(void * pvParameters)
 {
 	uint8_t len;
-	uint8_t i = 0;
-	uint8_t scanCompleted = 0;
 	char card_no[15];
-
 	char rfid[15];
+
+	uint8_t i = 0;
 
 	#ifdef __DEBUG_MESSAGES__
 			if( xSemaphoreTake( debugSema, ( portTickType ) 500 ) == pdTRUE )
@@ -561,27 +560,40 @@ static void scanCard(void * pvParameters)
 	#endif
 	for(;;)
 	{
-		if(uart0_fifo.num_bytes > 0)
+		/*if(uart0_fifo.num_bytes > 0)
 		{
 			char c = uart0_getc();
 			card_no[i++] = c;
 		}
 
-		if(i == 12)
+		if(i == 13)
 		{
-			memcpy(rfid, card_no, 10);
-			rfid[10] = '\0';
+			card_no[10] = '\0';
+			// 3A7DC5
 			i = 0;
+			uart0_flushrx();
+			//char * c = &card_no[4];
+			/*memcpy(rfid, card_no, 12);
+			rfid[11] = '\0';
+			i = 0;*/
 
-			/* send signal to http process */
+		while(i != 13)
+		{
+			if(uart0_fifo.num_bytes > 0)
+				card_no[i++] = uart0_getc();
+		}
+		card_no[12] = NULL;
+		i = 0;
+		uart0_flushrx();
+
+			/* send queue to http process */
 			if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
 			{
 				debug_out("no: ");
-				debug_out(rfid);
+				debug_out(card_no);
 				debug_out("\r\n");
 				xSemaphoreGive(debugSema);
 			}	
-		}	
 	}	
 }
 
