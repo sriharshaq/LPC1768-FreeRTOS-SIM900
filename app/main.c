@@ -39,40 +39,50 @@ FILE * stdin;
 FILE * stdout;
 FILE * stderr;
 
-/* Define how many number of operator or apn we have (opr and apn array length should be same) */
-#define APN_OPR_LIST_LEN 8
-
 /* Setup Hardware Function */
+//////////////////////////////////////////////////////
 void 	prvSetupHardware(void);
+//////////////////////////////////////////////////////
 
 /* Tasks */
+//////////////////////////////////////////////////////
 static void systemBoot(void * pvParameters);
 static void connectGPRS(void * pvParameters);
 static void updateModemStatus(void * pvParameters);
 static void displayProcess(void * pvParameters);
 static void scanCard(void * pvParameters);
+static void scankeyPad(void * pvParameters);
 static void httpProc(void * pvParameters);
+//////////////////////////////////////////////////////
 
 /* Semaphores */
+//////////////////////////////////////////////////////
 xSemaphoreHandle modemSema;
 xSemaphoreHandle displaySema;
 xSemaphoreHandle scanCardSema;
-
-#ifdef __DEBUG_MESSAGES__
-	xSemaphoreHandle debugSema;
-#endif
+xSemaphoreHandle debugSema;
+//////////////////////////////////////////////////////
 
 /* Task Handles */
+//////////////////////////////////////////////////////
 xTaskHandle systemBootHandle;
 xTaskHandle connectGPRSHandle;
 xTaskHandle updateModemStatusHandle;
 xTaskHandle displayProcessHandle;
 xTaskHandle scanCardHandle;
 xTaskHandle httpTaskHandle;
+xTaskHandle keypadTaskHandle;
+//////////////////////////////////////////////////////
 
 /* Queues */
+//////////////////////////////////////////////////////
 xQueueHandle httpQueue;
 xQueueHandle lcdQueue;
+xQueueHandle keypadQueue;
+//////////////////////////////////////////////////////
+
+/* APN/OPR List size */
+#define APN_OPR_LIST_LEN 8
 
 /* List of operators */
 const char * oprList[]	=	{	
@@ -165,46 +175,34 @@ static void systemBoot(void * pvParameters)
 	for(;;)
 	{
 		/* create semaphores */
+		//////////////////////////////////////////////////////
 		modemSema 			= xSemaphoreCreateMutex();
 		displaySema			= xSemaphoreCreateMutex();
 		scanCardSema		= xSemaphoreCreateMutex();
 		debugSema			= xSemaphoreCreateMutex();
+		//////////////////////////////////////////////////////
 
-		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("semaphore created\r\n");
-				debug_out("ping modem\r\n");
-				xSemaphoreGive(debugSema);
-			}
-		#endif
-
+		/* ping modem for 8 times */
+		//////////////////////////////////////////////////////
 		for(uint8_t i = 0;i < 8;i++)
 		{
 			if(gsm_ping_modem())
 			{
-				debug_out("PING: ");
+				debug_out("ping: ");
 				debug_putc(i + 48); 
 				debug_out("\r\n");
 			}	
 		}
-
-		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("reading operator name from modem\r\n");
-				xSemaphoreGive(debugSema);
-			}
-		#endif
+		//////////////////////////////////////////////////////
 
 		/* Get operator name */
-		// TODO: process return value
 		__response = gsm_get_operator_name(&modem);
 
 		/* convert to lower for comparison */
 		strtolower(modem.operator_name);
 
 		/* find out apn */
+		//////////////////////////////////////////////////////
 		for(uint8_t i = 0;i < APN_OPR_LIST_LEN;i++)
 		{
 			if(strstr(modem.operator_name, oprList[i]))
@@ -213,104 +211,82 @@ static void systemBoot(void * pvParameters)
 				break;
 			}
 		}
+		//////////////////////////////////////////////////////
 
 		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("apn search completed\r\n");
-				debug_out("access point name for operator ");
-				debug_out(modem.operator_name);
-				debug_out(" is ");
-				debug_out(modem.setapn);
-				debug_out("\r\n");
-				xSemaphoreGive(debugSema);
-			}
-		#endif
-
-		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("reading apn from modem\r\n");
-				xSemaphoreGive(debugSema);
-			}
+			debug_out("apn search completed\r\n");
+			debug_out("access point name for operator ");
+			debug_out(modem.operator_name);
+			debug_out(" is ");
+			debug_out(modem.setapn);
+			debug_out("\r\n");
+			debug_out("reading apn from modem\r\n");
 		#endif
 
 		/* read apn from modem */
 		__response = gsm_get_accesspoint(&modem);
 
 		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("read apn completed\r\n");
-				debug_out("access point read from modem: ");
-				debug_out(modem.getapn);
-				debug_out("\r\n");
-				xSemaphoreGive(debugSema);
-			}
+			debug_out("read apn completed\r\n");
+			debug_out("access point read from modem: ");
+			debug_out(modem.getapn);
+			debug_out("\r\n");
 		#endif
 
 		/* Check with predefined APN */
 		if(strstr(modem.getapn, modem.setapn) == NULL)
 		{
 			/* If both are not matched set access point */
-			// TODO: process return value
-			//__response = gsm_set_accesspoint(&modem);
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("access point read from modem is different from actual\r\n");
-					debug_out("So setting actual accesspoint name\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("access point read from modem is different from actual\r\n");
+				debug_out("So setting actual accesspoint name\r\n");
 			#endif
 
+			/* set access point */
 			__response = gsm_set_accesspoint(&modem);
 
 			if(__response)
 			{
 				#ifdef __DEBUG_MESSAGES__
-					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						debug_out("set accesspoint name success\r\n");
-						debug_out("reading apn again from modem\r\n");
-						xSemaphoreGive(debugSema);
-					}
+					debug_out("set accesspoint name success\r\n");
+					debug_out("reading apn again from modem\r\n");
 				#endif		
 
+				/* read access point */
 				__response = gsm_get_accesspoint(&modem);
+
 				#ifdef __DEBUG_MESSAGES__
-					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						debug_out("read apn completed\r\n");
-						debug_out("apn name read: ");
-						debug_out(modem.getapn);
-						debug_out(", actual: ");
-						debug_out(modem.setapn);
-						debug_out("\r\n");
-						xSemaphoreGive(debugSema);
-					}
+					debug_out("read apn completed\r\n");
+					debug_out("apn name read: ");
+					debug_out(modem.getapn);
+					debug_out(", actual: ");
+					debug_out(modem.setapn);
+					debug_out("\r\n");
 				#endif					
 			}
 		}
 
+		/* else modem has valid apn name */
 		else
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("modem has valid apn no need to set\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("modem has valid apn no need to set\r\n");
 			#endif			
 		}
 
-		/* create queue */
-		httpQueue = xQueueCreate(10, sizeof(uint8_t));
+		/* create queues */
+		//////////////////////////////////////////////////////
+		httpQueue  	= xQueueCreate(10, sizeof(CardType_t));
+		lcdQueue   	= xQueueCreate(10, sizeof(CardType_t));
+		keypadQueue = xQueueCreate(10, sizeof(KeypadType_t));
+		//////////////////////////////////////////////////////
 
-		xSemaphoreGive(scanCardSema);
-		xSemaphoreGive(modemSema);
+		#ifdef __DEBUG_MESSAGES__
+			debug_out("queues are created, now creating the\r\ntasks after that this task will delete\r\n");
+		#endif				
 
 		/* Create GPRS Task */
+		//////////////////////////////////////////////////////
 		xTaskCreate(	connectGPRS,
 						(signed portCHAR *)"gprs",
 						configMINIMAL_STACK_SIZE,
@@ -320,7 +296,7 @@ static void systemBoot(void * pvParameters)
 
 		/* Create GPRS Task */
 		xTaskCreate(	httpProc,
-						(signed portCHAR *)"gprs",
+						(signed portCHAR *)"http",
 						configMINIMAL_STACK_SIZE,
 						NULL,
 						tskIDLE_PRIORITY,
@@ -328,7 +304,7 @@ static void systemBoot(void * pvParameters)
 
 		/* Create GPRS Task */
 		xTaskCreate(	scanCard,
-						(signed portCHAR *)"rfid",
+						(signed portCHAR *)"scancard",
 						configMINIMAL_STACK_SIZE,
 						NULL,
 						tskIDLE_PRIORITY,
@@ -336,40 +312,35 @@ static void systemBoot(void * pvParameters)
 
 		/* Create GPRS Task */
 		xTaskCreate(	displayProcess,
-						(signed portCHAR *)"rfid",
+						(signed portCHAR *)"display",
 						configMINIMAL_STACK_SIZE,
 						NULL,
 						tskIDLE_PRIORITY,
 						&displayProcessHandle);
+		//////////////////////////////////////////////////////
 
 		/* delete the boot task */
 		vTaskDelete(systemBootHandle);
-
 	}
 }
 
-
+/** @brief 
+ *  @param 
+ *  @return 
+ */
 static void connectGPRS(void * pvParameters)
 {
 	int8_t __response;
 
 	#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("GPRS task started\r\n");
-				xSemaphoreGive(debugSema);
-			}
+		debug_out("GPRS task started\r\n");
 	#endif
 
 	for(;;)
 	{
 		/* Check IP Status and check whether shutdown is required */
 		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("reading tcp status from modem\r\n");
-				xSemaphoreGive(debugSema);
-			}
+			debug_out("reading tcp status from modem\r\n");
 		#endif
 
 		/* Get TCP Status */
@@ -379,168 +350,144 @@ static void connectGPRS(void * pvParameters)
 		strtolower(modem.tcpstatus);
 
 		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("reading tcp status completed\r\n");
-				debug_out("status: ");
-				debug_out(modem.tcpstatus);
-				debug_out("\r\n");
-				xSemaphoreGive(debugSema);
-			}
+			debug_out("reading tcp status completed\r\n");
+			debug_out("status: ");
+			debug_out(modem.tcpstatus);
+			debug_out("\r\n");
 		#endif
 
 		/* check tcpstatus and do what action is required to bring wireless up */
 		if(strstr(modem.tcpstatus, "ip start") || strstr(modem.tcpstatus, "ip initial"))
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("ip start state bringing wireless up\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("ip start state bringing wireless up\r\n");
 			#endif				
 			if(gsm_start_gprs())
 			{
 				#ifdef __DEBUG_MESSAGES__
-					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						debug_out("GPRS start success\r\n");
-						debug_out("reading ip address\r\n");
-						xSemaphoreGive(debugSema);
-					}
+					debug_out("GPRS start success\r\n");
+					debug_out("reading ip address\r\n");
 				#endif	
+
+				/* read ip address from modem */
 				if(gsm_get_ip_address(&modem))
 				{
 					#ifdef __DEBUG_MESSAGES__
-						if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							debug_out("Read IP address success\r\n");
-							debug_out(modem.ip_addr);
-							xSemaphoreGive(debugSema);
-						}
+						debug_out("Read IP address success\r\n");
+						debug_out(modem.ip_addr);
 					#endif	
 				}
 			}
 		}
+
+		/* Not Implemented */
 		else if(strstr(modem.tcpstatus, "ip config"))
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("ip configure\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("ip configure\r\n");
 			#endif				
 		}
+
+		/* If gprs is already activated just read ip address from the modem */
 		else if(strstr(modem.tcpstatus, "ip gprsact") || strstr(modem.tcpstatus, "ip status"))
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
 					debug_out("gprs act\r\n");
-					xSemaphoreGive(debugSema);
-				}
 			#endif	
 
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("reading ip address\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("reading ip address\r\n");
 			#endif	
+
+			/* read ip address from modem */
 			if(gsm_get_ip_address(&modem))
 			{
 				#ifdef __DEBUG_MESSAGES__
-					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						debug_out("Read IP address success\r\n");
-						debug_out(modem.ip_addr);
-						xSemaphoreGive(debugSema);
-					}
+					debug_out("Read IP address success\r\n");
+					debug_out(modem.ip_addr);
 				#endif	
 			}
 		}
+
+		/* Not Implemented */
 		else if(strstr(modem.tcpstatus, "tcp connecting"))
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("connecting\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("connecting\r\n");
 			#endif				
 		}
+
+		/* If it already connected disconnect 1st and then read ip address*/
 		else if(strstr(modem.tcpstatus, "connect ok"))
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("connect ok\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("connect ok\r\n");
 			#endif	
+
+			/* disconnect */
 			if(gsm_tcp_disconnect())
 			{
 				#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
 					debug_out("disconnect OK\r\n");
-					xSemaphoreGive(debugSema);
-				}
 				#endif	
+
+				/* read ip address from modem */
+				if(gsm_get_ip_address(&modem))
+				{
+					#ifdef __DEBUG_MESSAGES__
+						debug_out("Read IP address success\r\n");
+						debug_out(modem.ip_addr);
+					#endif	
+				}
 			}			
 		}
+
+		/* TODO: Not tested */
 		else if(strstr(modem.tcpstatus, "tcp closing"))
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("tcp closing\r\n");
-					xSemaphoreGive(debugSema);
-				}
-			#endif				
+				debug_out("tcp closing\r\n");
+			#endif	
+
+			/* read ip address from modem */
+			if(gsm_get_ip_address(&modem))
+			{
+				#ifdef __DEBUG_MESSAGES__
+					debug_out("Read IP address success\r\n");
+					debug_out(modem.ip_addr);
+				#endif	
+			}			
 		}
+
+		/* TODO: Not tested */ 
 		else if(strstr(modem.tcpstatus, "tcp closed"))
 		{
 			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("tcp closed\r\n");
-					xSemaphoreGive(debugSema);
-				}
+				debug_out("tcp closed\r\n");
 			#endif				
+
+			/* read ip address from modem */
+			if(gsm_get_ip_address(&modem))
+			{
+				#ifdef __DEBUG_MESSAGES__
+					debug_out("Read IP address success\r\n");
+					debug_out(modem.ip_addr);
+				#endif	
+			}	
 		}
+
+		/* FIXME: Dont know what to do? If deactivated :( */
 		else if(strstr(modem.tcpstatus, "pdp deact"))
 		{
-				// FIXME: What to do?
-				#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("pdp deactivated shutdown is required\r\n");
-					xSemaphoreGive(debugSema);
-				}
+			// FIXME: What to do?
+			#ifdef __DEBUG_MESSAGES__
+				debug_out("pdp deactivated shutdown is required\r\n");
 			#endif			
 		}
 
 		#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("task is no more required suspending\r\n");
-				xSemaphoreGive(debugSema);
-			}
-		#endif
-
-
-
-		if( xQueueSend( httpQueue, ( void * ) &__flag, ( portTickType ) 10 ) != pdPASS )
-        {
-            if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("failed to send to queue\r\n");
-				xSemaphoreGive(debugSema);
-			}
-        }
+			debug_out("gprs task completed, suspending now\r\n");
+		#endif	
 
 		/* suspend the task */
 		vTaskSuspend(connectGPRSHandle);
@@ -549,23 +496,30 @@ static void connectGPRS(void * pvParameters)
 
 static void httpProc(void * pvParameters)
 {
-	uint8_t __value;
-	uint8_t __flag = 0;
+	CardType_t * _card;
 	for(;;)
 	{
+		/* check whether queue is created successfully */
 	    if( httpQueue != 0 )
 	    {
-	        if( xQueueReceive( httpQueue, &( __value ), ( portTickType ) 10 ) )
+	    	/* Wait for queue */
+	        if( xQueueReceive( httpQueue, &( _card ), ( portTickType ) 10 ) )
 	        {
-				#ifdef __DEBUG_MESSAGES__
-					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						debug_out("msg receied started http\r\n");
-						xSemaphoreGive(debugSema);
-					}
-				#endif	
+	        	/* send card number to server and get validation result */
 
-				__flag = 1;
+	        	/* wait for modem semaphore */
+	        	if(xSemaphoreTake(modemSema, (portTickType) 10) == pdTRUE)
+	        	{
+	        		/* got resource */
+
+	        		/* send card number to server and get validation result */
+	        		if()
+
+	        	}
+	        	else
+	        	{
+	        		/* resource busy */
+	        	}
 			}
 		}
 
