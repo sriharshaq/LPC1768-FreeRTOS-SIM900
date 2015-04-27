@@ -950,34 +950,55 @@ int8_t gsm_http_put(char * host, char * path, char * dat)
 	{
 		if(gsm_send('>'))
 		{
-			/* request type */
+			// /* request type */
+			// modem_out("PUT ");
+			// modem_out(path);
+			// modem_out(" HTTP/1.1\r\n");
+
+			// /* host name */
+			// modem_out("Host: ");
+			// modem_out(host);
+			// modem_out("\r\n");
+
+			// /* content type */
+			// modem_out("Content-Type: application/json\r\n");
+
+			// /* acceptance type */
+			// modem_out("Accept: application/json\r\n");
+
+			// modem_out("\r\n");
+
+			// /* Content Length */
+			// modem_out("Content-Length: ");
+			// sprintf(tbuff, "%d", strlen(dat));
+			// modem_out(tbuff);
+
+			// modem_out("\r\n\r\n");
+			// modem_out(dat);
+			// modem_out("\r\n\r\n");
+
+			// /* Send completed command */
+			// modem_putc(0x1A);
+
 			modem_out("PUT ");
 			modem_out(path);
 			modem_out(" HTTP/1.1\r\n");
-
-			/* host name */
+			// 2nd line
 			modem_out("Host: ");
 			modem_out(host);
 			modem_out("\r\n");
-
-			/* content type */
+			// 3rd line
 			modem_out("Content-Type: application/json\r\n");
-
-			/* acceptance type */
+			// 4th line
 			modem_out("Accept: application/json\r\n");
-
-			modem_out("\r\n");
-
-			/* Content Length */
+			// 5th line
 			modem_out("Content-Length: ");
 			sprintf(buff, "%d", strlen(dat));
 			modem_out(buff);
-
 			modem_out("\r\n\r\n");
 			modem_out(dat);
 			modem_out("\r\n\r\n");
-
-			/* Send completed command */
+			// Send
 			modem_putc(0x1A);
 
 			/* read 1st line it should blank */

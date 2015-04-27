@@ -10,7 +10,7 @@
 #define KEY_R0 23
 #define KEY_R1 24
 #define KEY_R2 25
-#define KEY_R3 26
+#define KEY_R3 -26
 
 #define NO_KEY_PRESS 0
 

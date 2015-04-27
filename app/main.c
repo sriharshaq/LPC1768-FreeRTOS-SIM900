@@ -34,10 +34,14 @@
 /* application config */
 #include "config.h"
 
+#define __NUM "9342833087"
+
 /* streams (stdout, stdin, stderr) */
 FILE * stdin;
 FILE * stdout;
 FILE * stderr;
+
+#define WEIGHT_THRESHOLD	100
 
 /* Define how many number of operator or apn we have (opr and apn array length should be same) */
 #define APN_OPR_LIST_LEN 8
@@ -50,13 +54,14 @@ static void systemBoot(void * pvParameters);
 static void connectGPRS(void * pvParameters);
 static void updateModemStatus(void * pvParameters);
 static void displayProcess(void * pvParameters);
-static void scanCard(void * pvParameters);
+static void measureWeight(void * pvParameters);
 static void httpProc(void * pvParameters);
+static void sendSms(void * pvParameters);
 
 /* Semaphores */
 xSemaphoreHandle modemSema;
 xSemaphoreHandle displaySema;
-xSemaphoreHandle scanCardSema;
+xSemaphoreHandle measWeightSema;
 
 #ifdef __DEBUG_MESSAGES__
 	xSemaphoreHandle debugSema;
@@ -67,11 +72,16 @@ xTaskHandle systemBootHandle;
 xTaskHandle connectGPRSHandle;
 xTaskHandle updateModemStatusHandle;
 xTaskHandle displayProcessHandle;
-xTaskHandle scanCardHandle;
+xTaskHandle measWeightHandle;
 xTaskHandle httpTaskHandle;
+xTaskHandle smsHandle;
 
 /* Queues */
 xQueueHandle httpQueue;
+xQueueHandle smsQueue;
+xQueueHandle lcdQueue;
+
+uint32_t weight_val = 0;
 
 /* List of operators */
 const char * oprList[]	=	{	
@@ -166,7 +176,7 @@ static void systemBoot(void * pvParameters)
 		/* create semaphores */
 		modemSema 			= xSemaphoreCreateMutex();
 		displaySema			= xSemaphoreCreateMutex();
-		scanCardSema		= xSemaphoreCreateMutex();
+		measWeightSema		= xSemaphoreCreateMutex();
 		debugSema			= xSemaphoreCreateMutex();
 
 		#ifdef __DEBUG_MESSAGES__
@@ -303,6 +313,10 @@ static void systemBoot(void * pvParameters)
 			#endif			
 		}
 
+		httpQueue 	= xQueueCreate( 10, sizeof(uint32_t) );
+		smsQueue 	= xQueueCreate( 10, sizeof(uint32_t) );
+		lcdQueue 	= xQueueCreate( 10, sizeof(uint32_t) );
+
 		/* Create GPRS Task */
 		xTaskCreate(	connectGPRS,
 						(signed portCHAR *)"gprs",
@@ -318,15 +332,30 @@ static void systemBoot(void * pvParameters)
 						NULL,
 						tskIDLE_PRIORITY,
 						&httpTaskHandle);
+
 		/* Create GPRS Task */
-		xTaskCreate(	scanCard,
+		xTaskCreate(	measureWeight,
 						(signed portCHAR *)"rfid",
 						configMINIMAL_STACK_SIZE,
 						NULL,
 						tskIDLE_PRIORITY,
-						&scanCardHandle);
+						&measWeightHandle);
 
-		xSemaphoreGive(scanCardSema);
+		/*xTaskCreate(	sendSms,
+						(signed portCHAR *)"sendsms",
+						configMINIMAL_STACK_SIZE,
+						NULL,
+						tskIDLE_PRIORITY,
+						&smsHandle);*/
+		
+		xTaskCreate(	displayProcess,
+						(signed portCHAR *)"display",
+						configMINIMAL_STACK_SIZE,
+						NULL,
+						tskIDLE_PRIORITY,
+						&displayProcessHandle);
+
+		xSemaphoreGive(measWeightSema);
 
 		/* delete the boot task */
 		vTaskDelete(systemBootHandle);
@@ -338,11 +367,6 @@ static void systemBoot(void * pvParameters)
 static void connectGPRS(void * pvParameters)
 {
 	int8_t __response;
-
-	uint8_t __flag = 1;
-
-	/* create queue */
-	httpQueue = xQueueCreate(5, sizeof(uint8_t));
 
 	#ifdef __DEBUG_MESSAGES__
 			if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
@@ -423,7 +447,10 @@ static void connectGPRS(void * pvParameters)
 				}
 			#endif				
 		}
-		else if(strstr(modem.tcpstatus, "ip gprsact") || strstr(modem.tcpstatus, "ip status"))
+		else if (	strstr(modem.tcpstatus, "ip gprsact") 	|| 
+					strstr(modem.tcpstatus, "ip status") 	||
+					strstr(modem.tcpstatus, "tcp closed")
+				)
 		{
 			#ifdef __DEBUG_MESSAGES__
 				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
@@ -492,16 +519,6 @@ static void connectGPRS(void * pvParameters)
 				}
 			#endif				
 		}
-		else if(strstr(modem.tcpstatus, "tcp closed"))
-		{
-			#ifdef __DEBUG_MESSAGES__
-				if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					debug_out("tcp closed\r\n");
-					xSemaphoreGive(debugSema);
-				}
-			#endif				
-		}
 		else if(strstr(modem.tcpstatus, "pdp deact"))
 		{
 				// FIXME: What to do?
@@ -522,17 +539,6 @@ static void connectGPRS(void * pvParameters)
 			}
 		#endif
 
-
-
-		if( xQueueSend( httpQueue, ( void * ) &__flag, ( portTickType ) 10 ) != pdPASS )
-        {
-            if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
-			{
-				debug_out("failed to send to queue\r\n");
-				xSemaphoreGive(debugSema);
-			}
-        }
-
 		/* suspend the task */
 		vTaskSuspend(connectGPRSHandle);
 	}
@@ -540,54 +546,60 @@ static void connectGPRS(void * pvParameters)
 
 static void httpProc(void * pvParameters)
 {
-	uint8_t __value;
-	uint8_t __flag = 0;
+	uint32_t _weight;
+	char gen_buff[64];
 	for(;;)
 	{
 	    if( httpQueue != 0 )
 	    {
-	        if( xQueueReceive( httpQueue, &( __value ), ( portTickType ) 10 ) )
+	        if( xQueueReceive( httpQueue, &( _weight ), ( portTickType ) 10 ) )
 	        {
+	        	sprintf(gen_buff, "{\"w_val\":%d}",_weight);
 				#ifdef __DEBUG_MESSAGES__
 					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
 					{
-						debug_out("msg receied started http\r\n");
+						debug_out("msg received by http\r\n");
 						xSemaphoreGive(debugSema);
 					}
-				#endif	
+				#endif
 
-				__flag = 1;
-			}
-		}
-
-		/*if(__flag == 1)
-		{
-			if(gsm_http_get("lit-taiga-2854.herokuapp.com","/weight/1"))
-			{
-				http_read_data(&modem);
-
-				if(gsm_tcp_disconnect())
+				if(gsm_http_put("lit-taiga-2854.herokuapp.com","/weight/1", gen_buff))
 				{
-					#ifdef __DEBUG_MESSAGES__
+					http_read_data(&modem);
+
+					if(gsm_tcp_disconnect())
+					{
+						#ifdef __DEBUG_MESSAGES__
+							if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+							{
+								debug_out("tcp disconnect success\r\n");
+								xSemaphoreGive(debugSema);
+							}
+						#endif					
+					}
+					else
+					{
+						#ifdef __DEBUG_MESSAGES__
 						if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
 						{
-							debug_out("tcp disconnect success\r\n");
+							debug_out("tcp disconnect failed\r\n");
 							xSemaphoreGive(debugSema);
 						}
-					#endif					
+						#endif
+					}
 				}
 				else
 				{
 					#ifdef __DEBUG_MESSAGES__
 					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
 					{
-						debug_out("tcp disconnect failed\r\n");
+						debug_out("http failed\r\n");
 						xSemaphoreGive(debugSema);
 					}
-					#endif
+					#endif					
 				}
-			}			
-		}*/
+			}
+		}
 	}
 }
 
@@ -602,51 +614,180 @@ static void updateModemStatus(void * pvParameters)
 
 static void displayProcess(void * pvParameters)
 {
+	uint8_t count = 0;
+	char buff[20];
+	uint32_t __weight;
 	for(;;)
 	{
+	/*	if(count == 0)
+		{
+			lcd_write_instruction_4d(0x80);
+			lcd_print("   WEIGHT    ");
+			sprintf(buff, "%d g", weight_val);
+			lcd_write_instruction_4d(0xC0);
+			lcd_print(buff);
+			lcd_print("                     ");
+			count++;
+		}*/
 
+		if(count == 0)
+		{
+			lcd_write_instruction_4d(0x80);
+			lcd_print("  IP ADDR    ");
+			lcd_write_instruction_4d(0xC0);
+			lcd_print(modem.ip_addr);
+			lcd_print("                     ");
+			count++;
+		}
+
+		else if(count == 1)
+		{
+			lcd_write_instruction_4d(0x80);
+			lcd_print("     GPRS    ");
+			lcd_write_instruction_4d(0xC0);
+			lcd_print(modem.tcpstatus);
+			lcd_print("                     ");
+			count = 0;
+		}
+
+		if( xQueueReceive( lcdQueue, &( __weight ), ( portTickType ) 10 ) )
+		{
+			lcd_write_instruction_4d(0x80);
+			lcd_print("   WEIGHT    ");
+			sprintf(buff, "%d g", __weight);
+			lcd_write_instruction_4d(0xC0);
+			lcd_print(buff);
+			lcd_print("                     ");
+		}
+
+		vTaskDelay(1000);
 	}	
 }
 
-static void scanCard(void * pvParameters)
+static void sendSms(void * pvParameters)
 {
-	uint8_t len;
-	uint8_t i = 0;
-	uint8_t scanCompleted = 0;
-	char card_no[15];
-
-	char rfid[15];
-
-	#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 500 ) == pdTRUE )
-			{
-				debug_out("Scanning task started\r\n");
-				xSemaphoreGive(debugSema);
-			}
-	#endif
+	uint32_t _weight;
+	char buff[32];
 	for(;;)
 	{
-		if(uart0_fifo.num_bytes > 0)
+		if(smsQueue != 0 )
+	    {
+	        if( xQueueReceive( smsQueue, &( _weight ), ( portTickType ) 10 ) )
+	        {
+				#ifdef __DEBUG_MESSAGES__
+					if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						debug_out("msg received by sms task\r\n");
+						xSemaphoreGive(debugSema);
+					}
+				#endif
+
+				sprintf(buff, "alert: weight is %d grams", _weight);
+
+				if(gsm_send_sms(__NUM, buff))
+				{
+					#ifdef __DEBUG_MESSAGES__
+						if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							debug_out("sms sent\r\n");
+							xSemaphoreGive(debugSema);
+						}
+					#endif					
+				}
+
+	        }
+	    }
+	}	
+}
+
+static void measureWeight(void * pvParameters)
+{
+	uint8_t len;
+
+	uint32_t last_read = 0;
+
+	uint32_t _weight;
+
+	#ifdef __DEBUG_MESSAGES__
+		if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
 		{
-			char c = uart0_getc();
-			card_no[i++] = c;
+			debug_out("Measure weight task started\r\n");
+			xSemaphoreGive(debugSema);
 		}
+	#endif
 
-		if(i == 12)
+	for(;;)
+	{
+		len = uart0_readline();
+		char 		__next;
+		uint32_t 	__upper 	= strtol(uart0_fifo.line, &__next , 10);
+		char *		_next 		= index(uart0_fifo.line, '.') + 1;
+		uint32_t 	__lower 	= strtol(_next, &__next , 10);
+		uint32_t 	val 		= (__upper * 1000) + __lower;
+
+		int32_t temp;
+
+		if(last_read != val)
 		{
-			memcpy(rfid, card_no, 10);
-			rfid[10] = '\0';
-			i = 0;
+			vTaskDelay(1000);
+			if(last_read > val)
+				temp = last_read - val;
+			else if(val > last_read)
+				temp = val - last_read;
 
-			/* send signal to http process */
-			if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+			_weight = val;
+			last_read = val;
+
+			if( xQueueSend( lcdQueue, ( void * ) &_weight, ( portTickType ) 10 ) );
+
+			// /*if(temp > WEIGHT_THRESHOLD)
+			// {
+
+	  //       	#ifdef __DEBUG_MESSAGES__
+		 //            if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			// 		{
+			// 			debug_out("threshold crossed\r\n");
+			// 			xSemaphoreGive(debugSema);
+			// 		}
+			// 	#endif
+			// 	/* send to sms task */
+			// 	if( xQueueSend( smsQueue, ( void * ) &_weight, ( portTickType ) 10 ) != pdPASS )
+		 //        {
+		 //        	#ifdef __DEBUG_MESSAGES__
+			//             if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+			// 			{
+			// 				debug_out("failed to send to sms queue\r\n");
+			// 				xSemaphoreGive(debugSema);
+			// 			}
+			// 		#endif
+		 //        }
+			// }*/
+
+				if( xQueueSend( httpQueue, ( void * ) &_weight, ( portTickType ) 10 ) != pdPASS )
+		        {
+		        	#ifdef __DEBUG_MESSAGES__
+			            if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							debug_out("failed to send to http queue\r\n");
+							xSemaphoreGive(debugSema);
+						}
+					#endif
+		        }			
+
+			
+/*			else
 			{
-				debug_out("no: ");
-				debug_out(rfid);
-				debug_out("\r\n");
-				xSemaphoreGive(debugSema);
-			}	
-		}	
+	            if( xSemaphoreTake( debugSema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					debug_out("sent to queue\r\n");
+					xSemaphoreGive(debugSema);
+				}					
+			}*/
+
+			/* send to http task */
+			
+		}
+		vTaskDelay(1000);
 	}	
 }
 
