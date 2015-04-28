@@ -497,32 +497,81 @@ static void connectGPRS(void * pvParameters)
 static void httpProc(void * pvParameters)
 {
 	uint8_t i;
+	char rfid[10];
+	char * path;
+	path = (char *) malloc(32);
 	for(;;)
 	{
 		/* check whether queue is created successfully */
 	    if( httpQueue != 0 )
 	    {
 	    	/* Wait for queue */
-	        if( xQueueReceive( httpQueue, &( i ), ( portTickType ) 10 ) )
+	        if( xQueueReceive( httpQueue, ( rfid ), ( portTickType ) 10 ) )
 	        {
 	        	/* send card number to server and get validation result */
+	        	strcpy(path, BASE);
+	        	memcpy(&path[strlen(path)], rfid, 6);
+	        	path[strlen(BASE) + 6] = NULL;
 
-	        	/* wait for modem semaphore */
-	        	if(xSemaphoreTake(modemSema, (portTickType) 10) == pdTRUE)
+	        	if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+				{
+					debug_out(path);
+					debug_out("\r\n");
+					xSemaphoreGive(debugSema);
+				}
+	        	
+				if(gsm_http_get(URL, "/weight/1"))
 	        	{
-	        		/* got resource */
+		        	if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+					{
+						debug_out("HTTP OK\r\n");
+						xSemaphoreGive(debugSema);
+					}
+					http_read_data(&modem);
 
-	        		/* send card number to server and get validation result */
+					if(gsm_tcp_disconnect())
+					{
+						if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+						{
+							debug_out("DISCONNECT OK\r\n");
+							xSemaphoreGive(debugSema);
+						}	
+					}
+					else
+					{
+						if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+						{
+							debug_out("DISCONNECT OK\r\n");
+							xSemaphoreGive(debugSema);
+						}	
+					}
+				}
+
+				else
+	        	{
+					if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+					{
+						debug_out("HTTP FAIL\r\n");
+						xSemaphoreGive(debugSema);
+					}
+	        	}
+		  
+	        	
+	        	/* wait for modem semaphore */
+	        	// if(xSemaphoreTake(modemSema, (portTickType) 10) == pdTRUE)
+	        	// {
+	        	// 	/* got resource */
+
+	        	// 	 send card number to server and get validation result 
 	        		
 
-	        	}
-	        	else
-	        	{
-	        		/* resource busy */
-	        	}
+	        	// }
+	        	// else
+	        	// {
+	        	// 	/* resource busy */
+	        	// }
 			}
 		}
-
 	}
 }
 
@@ -560,40 +609,22 @@ static void scanCard(void * pvParameters)
 	#endif
 	for(;;)
 	{
-		/*if(uart0_fifo.num_bytes > 0)
-		{
-			char c = uart0_getc();
-			card_no[i++] = c;
-		}
-
-		if(i == 13)
-		{
-			card_no[10] = '\0';
-			// 3A7DC5
-			i = 0;
-			uart0_flushrx();
-			//char * c = &card_no[4];
-			/*memcpy(rfid, card_no, 12);
-			rfid[11] = '\0';
-			i = 0;*/
-
-		while(i != 13)
+		while(i != 12)
 		{
 			if(uart0_fifo.num_bytes > 0)
 				card_no[i++] = uart0_getc();
 		}
-		card_no[12] = NULL;
+
+		char * c = &card_no[4];
+		memcpy(rfid, c, 6);
+		//rfid[6] = NULL;
+
 		i = 0;
 		uart0_flushrx();
 
-			/* send queue to http process */
-			if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-			{
-				debug_out("no: ");
-				debug_out(card_no);
-				debug_out("\r\n");
-				xSemaphoreGive(debugSema);
-			}	
+		/* send queue to http process */
+
+		xQueueSend( httpQueue, ( void * ) rfid, ( portTickType ) 10 );
 	}	
 }
 
