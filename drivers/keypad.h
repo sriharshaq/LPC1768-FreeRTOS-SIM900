@@ -4,7 +4,7 @@
 
 #include "stdint.h"
 
-#define _SWITCH_DEB_DELAY 50
+#define _SWITCH_DEB_DELAY 10
 
 // Port (P1)
 #define KEY_C0 19

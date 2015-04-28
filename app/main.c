@@ -145,6 +145,13 @@ int main(void)
 		debug_out("creating the tasks\r\n");
 	#endif
 
+/*	while(1)
+	{
+		char c = read_keypad();
+		if(c != 0)
+			debug_putc(c);
+	}*/
+
 	/* Create Boot Task */
 	xTaskCreate(	systemBoot,
 					(signed portCHAR *)"boot",
@@ -157,6 +164,9 @@ int main(void)
 		debug_out("boot task created\r\n");
 		debug_out("starting the os\r\n");
 	#endif
+
+	lcd_write_instruction_4d(0x80);
+	lcd_print("system started");	
 
 	/* Start the scheduler */
 	vTaskStartScheduler();
@@ -181,6 +191,13 @@ static void systemBoot(void * pvParameters)
 		scanCardSema		= xSemaphoreCreateMutex();
 		debugSema			= xSemaphoreCreateMutex();
 		//////////////////////////////////////////////////////
+
+		if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+		{
+			lcd_write_instruction_4d(0xC0);
+			lcd_print("semaphore create");
+			xSemaphoreGive(displaySema);
+		}
 
 		/* ping modem for 8 times */
 		//////////////////////////////////////////////////////
@@ -242,6 +259,14 @@ static void systemBoot(void * pvParameters)
 				debug_out("So setting actual accesspoint name\r\n");
 			#endif
 
+			if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+			{
+				lcd_write_instruction_4d(0x80);
+				lcd_print("apn setting");
+				lcd_print("             ");
+				xSemaphoreGive(displaySema);
+			}
+
 			/* set access point */
 			__response = gsm_set_accesspoint(&modem);
 
@@ -281,6 +306,14 @@ static void systemBoot(void * pvParameters)
 		keypadQueue = xQueueCreate(10, sizeof(char));
 		//////////////////////////////////////////////////////
 
+		if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+		{
+			lcd_write_instruction_4d(0x80);
+			lcd_print("queue create");
+			lcd_print("             ");
+			xSemaphoreGive(displaySema);
+		}
+
 		#ifdef __DEBUG_MESSAGES__
 			debug_out("queues are created, now creating the\r\ntasks after that this task will delete\r\n");
 		#endif				
@@ -318,6 +351,14 @@ static void systemBoot(void * pvParameters)
 						tskIDLE_PRIORITY,
 						&displayProcessHandle);
 		//////////////////////////////////////////////////////
+
+		if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+		{
+			lcd_write_instruction_4d(0x80);
+			lcd_print("tasks created");
+			lcd_print("             ");
+			xSemaphoreGive(displaySema);
+		}
 
 		/* delete the boot task */
 		vTaskDelete(systemBootHandle);
@@ -501,6 +542,23 @@ static void connectGPRS(void * pvParameters)
 			debug_out("gprs task completed, suspending now\r\n");
 		#endif	
 
+		if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+		{
+			lcd_write_instruction_4d(0x01);
+			lcd_write_instruction_4d(0x80);
+			lcd_print("GPRS ENABLE");
+			lcd_print("             ");
+			xSemaphoreGive(displaySema);
+		}
+
+		if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+		{
+			lcd_write_instruction_4d(0x01);
+			lcd_write_instruction_4d(0x80);
+			lcd_print("    WELCOME           ");
+			xSemaphoreGive(displaySema);
+		}
+
 		/* suspend the task */
 		vTaskSuspend(connectGPRSHandle);
 	}
@@ -511,16 +569,40 @@ static void httpProc(void * pvParameters)
 	uint8_t i;
 	char rfid[10];
 	char * path;
-	path = (char *) malloc(32);
+	path = (char *) malloc(64);
+	char name[20];
+	char amt[10];
+
+	char to[12];
+
+	char key[10];
+	char option;
+
+
+
 	for(;;)
 	{
+		back:
 		/* check whether queue is created successfully */
 	    if( httpQueue != 0 )
 	    {
 	    	/* Wait for queue */
 	        if( xQueueReceive( httpQueue, ( rfid ), ( portTickType ) 10 ) )
 	        {
+	        	/*bzero(path, 60);
+	        	strcpy(path, BASE);*/
+		        if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					lcd_write_instruction_4d(0x80);
+					lcd_print("Card read  ");
+					lcd_print("             ");
+					lcd_write_instruction_4d(0xC0);
+					lcd_print("connecting............");
+					xSemaphoreGive(displaySema);
+				}
+
 	        	/* send card number to server and get validation result */
+	        	bzero(path, 60);
 	        	strcpy(path, BASE);
 	        	memcpy(&path[strlen(path)], rfid, 6);
 	        	path[strlen(BASE) + 6] = NULL;
@@ -534,14 +616,351 @@ static void httpProc(void * pvParameters)
 						debug_out("\r\n");*/
 						xSemaphoreGive(debugSema);
 					}
-					/* {"id":18,"created_at":"2015-04-27T12:55:06.337Z","updated_at":"2015-04-28T02:45:33.063Z","amount":1000,"card":"1A2643","name":"person2"} */
+
+					if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						lcd_write_instruction_4d(0x80);
+						lcd_print("connected      ");
+						lcd_print("             ");
+						lcd_write_instruction_4d(0xC0);
+						lcd_print("                       ");
+						xSemaphoreGive(displaySema);
+					}
 
 					http_read_data(&modem);
+
+					/* {"id":18,"created_at":"2015-04-27T12:55:06.337Z","updated_at":"2015-04-28T02:45:33.063Z",
+					"amount":1000,"card":"1A2643","name":"person2"} */
+
+					if(strstr(modem.httpdata, "notfound"))
+					{
+						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							lcd_write_instruction_4d(0x80);
+							lcd_print("ERROR               ");
+							lcd_print("             ");
+							lcd_write_instruction_4d(0xC0);
+							lcd_print("Invalid card       ");
+							xSemaphoreGive(displaySema);
+						}	
+						modem_flush_rx();
+						goto back;				
+					}
+
+					char * _name = strstr(modem.httpdata, "name");
+					_name += sizeof("name\":");
+					char * c = index(_name, '"');
+
+					uint8_t __size = strlen(_name) - strlen(c);
+
+					memcpy(name, _name, __size);
+					name[__size] = '\0';
+
+					char * _amt = strstr(modem.httpdata, "amount");
+					_amt += sizeof("amount:");
+					c = index(_amt, ',');
+
+					__size = strlen(_amt) - strlen(c);
+
+					memcpy(amt, _amt, __size);
+					amt[__size] = '\0';
+
+					/* Parse data here */
+					if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						lcd_write_instruction_4d(0x80);
+						lcd_print("WELCOME              ");
+						lcd_print("             ");
+						lcd_write_instruction_4d(0xC0);
+						lcd_print(name);
+						xSemaphoreGive(displaySema);
+					}
 
 					debug_out("DATA\r\n");
 					debug_out(modem.httpdata);
 					debug_out("\r\n");
 
+					vTaskDelay(100);
+
+					if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						lcd_write_instruction_4d(0x80);
+						lcd_print("OPTIONS           ");
+						lcd_print("             ");
+						lcd_write_instruction_4d(0xC0);
+						lcd_print("1.BQ, 2.PB, 3.TR  ");
+						xSemaphoreGive(displaySema);
+					}	
+
+					do
+					{
+						option = read_keypad();
+					}
+					while(option == 0);
+
+					debug_putc(option);
+
+					if(option == '1')
+					{
+						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							lcd_write_instruction_4d(0x80);
+							lcd_print("BALANCE IS       ");
+							lcd_print("             ");
+							lcd_write_instruction_4d(0xC0);
+							lcd_print(amt);
+							lcd_print(" INR              ");
+							xSemaphoreGive(displaySema);
+						}	
+					}
+
+					else if(option == '2')
+					{
+						if(gsm_tcp_disconnect())
+						{
+							if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+							{
+								debug_out("DISCONNECT OK\r\n");
+								xSemaphoreGive(debugSema);
+							}	
+						}
+						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							lcd_write_instruction_4d(0x01);
+							lcd_write_instruction_4d(0x80);
+							lcd_print("ENTER BILLER");
+							lcd_print("             ");
+							lcd_write_instruction_4d(0xC0);
+							xSemaphoreGive(displaySema);
+						}	
+						char temp[2];
+						do
+						{
+							temp[0] = read_keypad();
+							if(temp[0] != 0)
+								lcd_write_character_4d(temp[0]);
+						}
+						while(temp[0] == 0);
+						temp[1] = NULL;
+						
+
+						strcat(path, "/");
+						strcat(path, temp);
+						strcat(path, "/");
+
+						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							lcd_write_instruction_4d(0x01);
+							lcd_write_instruction_4d(0x80);
+							lcd_print("ENTER AMOUNT");
+							lcd_print("             ");
+							lcd_write_instruction_4d(0xC0);
+							xSemaphoreGive(displaySema);
+						}	
+
+						char __temp;
+						uint8_t __i = 0;
+						do
+						{
+							__temp = read_keypad();
+							if(__temp != 0 && __temp != '*')
+							{
+								amt[__i++] = __temp;
+								lcd_write_character_4d(__temp);
+							}
+						}
+						while(__temp != '*');
+						amt[__i] = NULL;
+
+						strcat(path, amt);
+						debug_out(path);
+
+						if(gsm_http_get(URL, path))
+						{
+							if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+							{
+								lcd_write_instruction_4d(0x80);
+								lcd_print("connected      ");
+								lcd_print("             ");
+								lcd_write_instruction_4d(0xC0);
+								lcd_print("                       ");
+								xSemaphoreGive(displaySema);
+							}
+							http_read_data(&modem);		
+
+							if(strstr(modem.httpdata, "success"))
+							{
+								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+								{
+									lcd_write_instruction_4d(0x80);
+									lcd_print("TRANSACTION       ");
+									lcd_print("             ");
+									lcd_write_instruction_4d(0xC0);
+									lcd_print("SUCCESS                ");
+									xSemaphoreGive(displaySema);
+								}								
+							}	
+							else if(strstr(modem.httpdata, "insuffi"))
+							{
+								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+								{
+									lcd_write_instruction_4d(0x80);
+									lcd_print("TRANSACTION       ");
+									lcd_print("             ");
+									lcd_write_instruction_4d(0xC0);
+									lcd_print("BAL IS LOW       ");
+									xSemaphoreGive(displaySema);
+								}	
+							}
+							else
+							{
+								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+								{
+									lcd_write_instruction_4d(0x80);
+									lcd_print("TRANSACTION       ");
+									lcd_print("             ");
+									lcd_write_instruction_4d(0xC0);
+									lcd_print("ERROR             ");
+									xSemaphoreGive(displaySema);
+								}									
+							}
+						}
+					}
+
+					else if(option == '3')
+					{
+						if(gsm_tcp_disconnect())
+						{
+							if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+							{
+								debug_out("DISCONNECT OK\r\n");
+								xSemaphoreGive(debugSema);
+							}	
+						}
+						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							lcd_write_instruction_4d(0x01);
+							lcd_write_instruction_4d(0x80);
+							lcd_print("ENTER DEST");
+							lcd_print("             ");
+							lcd_write_instruction_4d(0xC0);
+							xSemaphoreGive(displaySema);
+						}	
+						char __temp = 0;
+						uint8_t __i = 0;
+						do
+						{
+							__temp = read_keypad();
+							if(__temp != 0 && __temp != '*')
+							{
+								to[__i++] = __temp;
+								lcd_write_character_4d(__temp);
+							}
+						}
+						while(__temp != '*');
+						to[__i] = NULL;
+
+						debug_out(path);
+						
+
+						strcat(path, "/");
+						strcat(path, to);
+						strcat(path, "/");
+
+						debug_out(path);
+
+						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+						{
+							lcd_write_instruction_4d(0x01);
+							lcd_write_instruction_4d(0x80);
+							lcd_print("ENTER AMOUNT");
+							lcd_print("             ");
+							lcd_write_instruction_4d(0xC0);
+							xSemaphoreGive(displaySema);
+						}	
+
+						 __temp = 0;
+						 __i = 0;
+						do
+						{
+							__temp = read_keypad();
+							if(__temp != 0 && __temp != '*')
+							{
+								amt[__i++] = __temp;
+								lcd_write_character_4d(__temp);
+							}
+						}
+						while(__temp != '*');
+						amt[__i] = NULL;
+
+						strcat(path, amt);
+						debug_out(path);
+
+						if(gsm_http_get(URL, path))
+						{
+							if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+							{
+								lcd_write_instruction_4d(0x80);
+								lcd_print("connected      ");
+								lcd_print("             ");
+								lcd_write_instruction_4d(0xC0);
+								lcd_print("                       ");
+								xSemaphoreGive(displaySema);
+							}
+							http_read_data(&modem);		
+
+							if(strstr(modem.httpdata, "success"))
+							{
+								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+								{
+									lcd_write_instruction_4d(0x80);
+									lcd_print("TRANSACTION       ");
+									lcd_print("             ");
+									lcd_write_instruction_4d(0xC0);
+									lcd_print("SUCCESS                ");
+									xSemaphoreGive(displaySema);
+								}								
+							}	
+							else if(strstr(modem.httpdata, "insuffi"))
+							{
+								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+								{
+									lcd_write_instruction_4d(0x80);
+									lcd_print("TRANSACTION       ");
+									lcd_print("             ");
+									lcd_write_instruction_4d(0xC0);
+									lcd_print("BAL IS LOW       ");
+									xSemaphoreGive(displaySema);
+								}	
+							}
+							else
+							{
+								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+								{
+									lcd_write_instruction_4d(0x80);
+									lcd_print("TRANSACTION       ");
+									lcd_print("             ");
+									lcd_write_instruction_4d(0xC0);
+									lcd_print("ERROR             ");
+									xSemaphoreGive(displaySema);
+								}									
+							}
+						}
+					}
+
+
+					/*if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+					{
+						lcd_write_instruction_4d(0x80);
+						lcd_print("OPTIONS           ");
+						lcd_print("             ");
+						lcd_write_instruction_4d(0xC0);
+						lcd_print("1.BQ, 2.PB, 3.TR  ");
+						xSemaphoreGive(displaySema);
+					}*/
+					
+
+						
 					if(gsm_tcp_disconnect())
 					{
 						if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
@@ -568,6 +987,16 @@ static void httpProc(void * pvParameters)
 						xSemaphoreGive(debugSema);
 					}
 	        	}
+
+	        	vTaskDelay(500);
+
+				if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
+				{
+					lcd_write_instruction_4d(0x01);
+					lcd_write_instruction_4d(0x80);
+					lcd_print("    WELCOME           ");
+					xSemaphoreGive(displaySema);
+				}	
 		  
 	        	
 	        	/* wait for modem semaphore */
