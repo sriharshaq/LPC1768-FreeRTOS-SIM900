@@ -2,6 +2,10 @@
 #ifndef __keypad_h__
 #define __keypad_h__
 
+#include "stdint.h"
+
+#define _SWITCH_DEB_DELAY 50
+
 // Port (P1)
 #define KEY_C0 19
 #define KEY_C1 20

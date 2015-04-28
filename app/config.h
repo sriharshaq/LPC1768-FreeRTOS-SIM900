@@ -2,7 +2,7 @@
 #ifndef __config_h__
 #define __config_h__
 
-#define URL 	"http://lit-taiga-2854.herokuapp.com"
+#define URL 	"lit-taiga-2854.herokuapp.com"
 #define BASE	"/gateway/"
 
 #define 	__DEBUG_MESSAGES__

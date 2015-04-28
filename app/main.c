@@ -332,9 +332,9 @@ static void connectGPRS(void * pvParameters)
 {
 	int8_t __response;
 
-	#ifdef __DEBUG_MESSAGES__
-		debug_out("GPRS task started\r\n");
-	#endif
+	// #ifdef __DEBUG_MESSAGES__
+	// 	debug_out("GPRS task started\r\n");
+	// #endif
 
 	for(;;)
 	{
@@ -484,6 +484,18 @@ static void connectGPRS(void * pvParameters)
 				debug_out("pdp deactivated shutdown is required\r\n");
 			#endif			
 		}
+		else
+		{
+			/* dont know what status it is */
+			/* read ip address from modem */
+			if(gsm_get_ip_address(&modem))
+			{
+				#ifdef __DEBUG_MESSAGES__
+					debug_out("Read IP address success\r\n");
+					debug_out(modem.ip_addr);
+				#endif	
+			}
+		}
 
 		#ifdef __DEBUG_MESSAGES__
 			debug_out("gprs task completed, suspending now\r\n");
@@ -512,22 +524,23 @@ static void httpProc(void * pvParameters)
 	        	strcpy(path, BASE);
 	        	memcpy(&path[strlen(path)], rfid, 6);
 	        	path[strlen(BASE) + 6] = NULL;
-
-	        	if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-				{
-					debug_out(path);
-					debug_out("\r\n");
-					xSemaphoreGive(debugSema);
-				}
 	        	
-				if(gsm_http_get(URL, "/weight/1"))
+				if(gsm_http_get(URL, path))
 	        	{
 		        	if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
 					{
 						debug_out("HTTP OK\r\n");
+						/*debug_out(path);
+						debug_out("\r\n");*/
 						xSemaphoreGive(debugSema);
 					}
+					/* {"id":18,"created_at":"2015-04-27T12:55:06.337Z","updated_at":"2015-04-28T02:45:33.063Z","amount":1000,"card":"1A2643","name":"person2"} */
+
 					http_read_data(&modem);
+
+					debug_out("DATA\r\n");
+					debug_out(modem.httpdata);
+					debug_out("\r\n");
 
 					if(gsm_tcp_disconnect())
 					{
@@ -571,6 +584,8 @@ static void httpProc(void * pvParameters)
 	        	// 	/* resource busy */
 	        	// }
 			}
+			else
+				modem_flush_rx();
 		}
 	}
 }
@@ -597,16 +612,7 @@ static void scanCard(void * pvParameters)
 	uint8_t len;
 	char card_no[15];
 	char rfid[15];
-
 	uint8_t i = 0;
-
-	#ifdef __DEBUG_MESSAGES__
-			if( xSemaphoreTake( debugSema, ( portTickType ) 500 ) == pdTRUE )
-			{
-				debug_out("Scanning task started\r\n");
-				xSemaphoreGive(debugSema);
-			}
-	#endif
 	for(;;)
 	{
 		while(i != 12)

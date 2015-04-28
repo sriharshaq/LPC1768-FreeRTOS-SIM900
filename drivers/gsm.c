@@ -882,6 +882,7 @@ int8_t gsm_http_get(char * host, char * path)
 		if(gsm_send('>'))
 		{
 
+			modem_flush_rx();
 			/* request type */
 			// modem_out("GET ");
 			// modem_out(path);
@@ -903,10 +904,8 @@ int8_t gsm_http_get(char * host, char * path)
 			// /* Send completed command */
 			// modem_putc(0x1A);
 
+
 			modem_out("GET ");
-			debug_out("GET ");
-			debug_out(path);
-			debug_out(" HTTP/1.1\r\n");
 			modem_out(path);
 			modem_out(" HTTP/1.1\r\n");
 
@@ -915,32 +914,22 @@ int8_t gsm_http_get(char * host, char * path)
 			modem_out(host);
 			modem_out("\r\n");
 
-			debug_out("Host: ");
-			debug_out(host);
-			debug_out("\r\n");
-
 			// 3rd line
 			modem_out("Content-Type: application/json\r\n");
 
-			debug_out("Content-Type: application/json\r\n");
-
 			// 4th line
 			modem_out("Accept: application/json\r\n");
-			debug_out("Accept: application/json\r\n");
-			debug_out("\r\n");
 
 			modem_out("\r\n");
-			/*modem_out("\r\n");*/
 
 			modem_putc(0x1A);
-			// 5th line
-			// modem_out("Content-Length: ");
-			// sprintf(buff, "%d", strlen(dat));
-			// modem_out(buff);
+
+			//_delay_us(500);
 
 			/* read 1st line it should blank */
 			len 	= modem_readline();
 			resp 	= process_response(uart3_fifo.line,len);
+			//debug_out(uart3_fifo.line);
 
 			/* if it's not blank return error */
 			if(resp != __LINE_BLANK)
@@ -952,11 +941,12 @@ int8_t gsm_http_get(char * host, char * path)
 			/* read 2nd line it should contain 'SEND OK' */
 			len 	= modem_readline();
 			resp 	= process_response(uart3_fifo.line,len);
+			debug_out(uart3_fifo.line);
 
 			/* check for __OTHER if not found return error */
 			if(resp != __LINE_OTHER)
 			{
-				modem_flush_rx();
+				//modem_flush_rx();
 				return __MODEM_LINE_NOT_OTHER;
 			}
 
@@ -985,6 +975,8 @@ int8_t gsm_http_put(char * host, char * path, char * dat)
 	{
 		if(gsm_send('>'))
 		{
+			//modem_flush_rx();
+
 			/* request type */
 			modem_out("PUT ");
 			modem_out(path);
@@ -1333,26 +1325,30 @@ void http_read_data(Modem_Type_t * t)
 {
 	uint16_t len;
 	len = modem_readline();
-
 	debug_out(uart3_fifo.line);
+
+	/*len = modem_readline();
+	debug_out(uart3_fifo.line);
+		len = modem_readline();
+	debug_out(uart3_fifo.line);*/
 
 	do
 	{
 		len = modem_readline();
-		debug_out(uart3_fifo.line);
+		//debug_out(uart3_fifo.line);
 	}
 	while(isblankstr(uart3_fifo.line, len) != 1);
 
-	debug_out("data enter\r\n");
+	//debug_out("data enter\r\n");
 	uint16_t _i = 0;
 	while(uart3_fifo.num_bytes > 0)
 	{
 		char c = uart3_getc();
 		t->httpdata[_i++] = c;
-		_delay_us(10);
+		vTaskDelay(1);
 	}
-	debug_out("data\r\n");
+	//debug_out("data\r\n");
 	t->httpdata[_i] = '\0';
-	debug_out(t->httpdata);
-	debug_out("\r\n");
+	//debug_out(t->httpdata);
+	//debug_out("\r\n");
 }

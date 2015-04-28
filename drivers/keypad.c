@@ -2,14 +2,14 @@
 #include "keypad.h"
 #include "LPC17xx.h"
 #include "delay.h"
-#include <stdint.h>
+#include "stdint.h"
 
 
-const uint8_t key_map[] = [	'0','1','2','3',
+const uint8_t key_map[] = {	'0','1','2','3',
 							'4','5','6','7',
 							'8','9','*','#',
 							'A','B','C','D'
-						  ];
+						  };
 
 uint8_t read_keypad(void)
 {
