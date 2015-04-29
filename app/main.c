@@ -644,7 +644,7 @@ static void httpProc(void * pvParameters)
 							xSemaphoreGive(displaySema);
 						}	
 						modem_flush_rx();
-						goto back;				
+						goto next;				
 					}
 
 					char * _name = strstr(modem.httpdata, "name");
@@ -960,7 +960,7 @@ static void httpProc(void * pvParameters)
 					}*/
 					
 
-						
+					next:
 					if(gsm_tcp_disconnect())
 					{
 						if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
