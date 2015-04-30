@@ -118,7 +118,7 @@ void prvSetupHardware(void)
 	SystemCoreClockUpdate();
 
 	/* init uart's */
-	uart0_init(__UART0_BAUDRATE);				// RFID Reader port
+	uart0_init(__UART0_BAUDRATE);				// Zigbee
 	uart1_init(__UART1_BAUDRATE);				// debug port
 	uart3_init(__UART3_BAUDRATE);				// modem port
 
@@ -589,434 +589,8 @@ static void httpProc(void * pvParameters)
 	    	/* Wait for queue */
 	        if( xQueueReceive( httpQueue, ( rfid ), ( portTickType ) 10 ) )
 	        {
-	        	/*bzero(path, 60);
-	        	strcpy(path, BASE);*/
-		        if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					lcd_write_instruction_4d(0x80);
-					lcd_print("Card read  ");
-					lcd_print("             ");
-					lcd_write_instruction_4d(0xC0);
-					lcd_print("connecting............");
-					xSemaphoreGive(displaySema);
-				}
-
-	        	/* send card number to server and get validation result */
-	        	bzero(path, 60);
-	        	strcpy(path, BASE);
-	        	memcpy(&path[strlen(path)], rfid, 6);
-	        	path[strlen(BASE) + 6] = NULL;
-	        	
-				if(gsm_http_get(URL, path))
-	        	{
-		        	if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-					{
-						debug_out("HTTP OK\r\n");
-						/*debug_out(path);
-						debug_out("\r\n");*/
-						xSemaphoreGive(debugSema);
-					}
-
-					if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						lcd_write_instruction_4d(0x80);
-						lcd_print("connected      ");
-						lcd_print("             ");
-						lcd_write_instruction_4d(0xC0);
-						lcd_print("                       ");
-						xSemaphoreGive(displaySema);
-					}
-
-					http_read_data(&modem);
-
-					/* {"id":18,"created_at":"2015-04-27T12:55:06.337Z","updated_at":"2015-04-28T02:45:33.063Z",
-					"amount":1000,"card":"1A2643","name":"person2"} */
-
-					if(strstr(modem.httpdata, "notfound"))
-					{
-						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							lcd_write_instruction_4d(0x80);
-							lcd_print("ERROR               ");
-							lcd_print("             ");
-							lcd_write_instruction_4d(0xC0);
-							lcd_print("Invalid card       ");
-							xSemaphoreGive(displaySema);
-						}	
-						modem_flush_rx();
-						goto next;				
-					}
-
-					char * _name = strstr(modem.httpdata, "name");
-					_name += sizeof("name\":");
-					char * c = index(_name, '"');
-
-					uint8_t __size = strlen(_name) - strlen(c);
-
-					memcpy(name, _name, __size);
-					name[__size] = '\0';
-
-					char * _amt = strstr(modem.httpdata, "amount");
-					_amt += sizeof("amount:");
-					c = index(_amt, ',');
-
-					__size = strlen(_amt) - strlen(c);
-
-					memcpy(amt, _amt, __size);
-					amt[__size] = '\0';
-
-					/* Parse data here */
-					if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						lcd_write_instruction_4d(0x80);
-						lcd_print("WELCOME              ");
-						lcd_print("             ");
-						lcd_write_instruction_4d(0xC0);
-						lcd_print(name);
-						xSemaphoreGive(displaySema);
-					}
-
-					debug_out("DATA\r\n");
-					debug_out(modem.httpdata);
-					debug_out("\r\n");
-
-					vTaskDelay(100);
-
-					if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						lcd_write_instruction_4d(0x80);
-						lcd_print("OPTIONS           ");
-						lcd_print("             ");
-						lcd_write_instruction_4d(0xC0);
-						lcd_print("1.BQ, 2.PB, 3.TR  ");
-						xSemaphoreGive(displaySema);
-					}	
-
-					do
-					{
-						option = read_keypad();
-					}
-					while(option == 0);
-
-					debug_putc(option);
-
-					if(option == '1')
-					{
-						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							lcd_write_instruction_4d(0x80);
-							lcd_print("BALANCE IS       ");
-							lcd_print("             ");
-							lcd_write_instruction_4d(0xC0);
-							lcd_print(amt);
-							lcd_print(" INR              ");
-							xSemaphoreGive(displaySema);
-						}	
-					}
-
-					else if(option == '2')
-					{
-						if(gsm_tcp_disconnect())
-						{
-							if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-							{
-								debug_out("DISCONNECT OK\r\n");
-								xSemaphoreGive(debugSema);
-							}	
-						}
-						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							lcd_write_instruction_4d(0x01);
-							lcd_write_instruction_4d(0x80);
-							lcd_print("ENTER BILLER");
-							lcd_print("             ");
-							lcd_write_instruction_4d(0xC0);
-							xSemaphoreGive(displaySema);
-						}	
-						char temp[2];
-						do
-						{
-							temp[0] = read_keypad();
-							if(temp[0] != 0)
-								lcd_write_character_4d(temp[0]);
-						}
-						while(temp[0] == 0);
-						temp[1] = NULL;
-						
-
-						strcat(path, "/");
-						strcat(path, temp);
-						strcat(path, "/");
-
-						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							lcd_write_instruction_4d(0x01);
-							lcd_write_instruction_4d(0x80);
-							lcd_print("ENTER AMOUNT");
-							lcd_print("             ");
-							lcd_write_instruction_4d(0xC0);
-							xSemaphoreGive(displaySema);
-						}	
-
-						char __temp;
-						uint8_t __i = 0;
-						do
-						{
-							__temp = read_keypad();
-							if(__temp != 0 && __temp != '*')
-							{
-								amt[__i++] = __temp;
-								lcd_write_character_4d(__temp);
-							}
-						}
-						while(__temp != '*');
-						amt[__i] = NULL;
-
-						strcat(path, amt);
-						debug_out(path);
-
-						if(gsm_http_get(URL, path))
-						{
-							if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-							{
-								lcd_write_instruction_4d(0x80);
-								lcd_print("connected      ");
-								lcd_print("             ");
-								lcd_write_instruction_4d(0xC0);
-								lcd_print("                       ");
-								xSemaphoreGive(displaySema);
-							}
-							http_read_data(&modem);		
-
-							if(strstr(modem.httpdata, "success"))
-							{
-								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-								{
-									lcd_write_instruction_4d(0x80);
-									lcd_print("TRANSACTION       ");
-									lcd_print("             ");
-									lcd_write_instruction_4d(0xC0);
-									lcd_print("SUCCESS                ");
-									xSemaphoreGive(displaySema);
-								}								
-							}	
-							else if(strstr(modem.httpdata, "insuffi"))
-							{
-								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-								{
-									lcd_write_instruction_4d(0x80);
-									lcd_print("TRANSACTION       ");
-									lcd_print("             ");
-									lcd_write_instruction_4d(0xC0);
-									lcd_print("BAL IS LOW       ");
-									xSemaphoreGive(displaySema);
-								}	
-							}
-							else
-							{
-								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-								{
-									lcd_write_instruction_4d(0x80);
-									lcd_print("TRANSACTION       ");
-									lcd_print("             ");
-									lcd_write_instruction_4d(0xC0);
-									lcd_print("ERROR             ");
-									xSemaphoreGive(displaySema);
-								}									
-							}
-						}
-					}
-
-					else if(option == '3')
-					{
-						if(gsm_tcp_disconnect())
-						{
-							if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-							{
-								debug_out("DISCONNECT OK\r\n");
-								xSemaphoreGive(debugSema);
-							}	
-						}
-						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							lcd_write_instruction_4d(0x01);
-							lcd_write_instruction_4d(0x80);
-							lcd_print("ENTER DEST");
-							lcd_print("             ");
-							lcd_write_instruction_4d(0xC0);
-							xSemaphoreGive(displaySema);
-						}	
-						char __temp = 0;
-						uint8_t __i = 0;
-						do
-						{
-							__temp = read_keypad();
-							if(__temp != 0 && __temp != '*')
-							{
-								to[__i++] = __temp;
-								lcd_write_character_4d(__temp);
-							}
-						}
-						while(__temp != '*');
-						to[__i] = NULL;
-
-						debug_out(path);
-						
-
-						strcat(path, "/");
-						strcat(path, to);
-						strcat(path, "/");
-
-						debug_out(path);
-
-						if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-						{
-							lcd_write_instruction_4d(0x01);
-							lcd_write_instruction_4d(0x80);
-							lcd_print("ENTER AMOUNT");
-							lcd_print("             ");
-							lcd_write_instruction_4d(0xC0);
-							xSemaphoreGive(displaySema);
-						}	
-
-						 __temp = 0;
-						 __i = 0;
-						do
-						{
-							__temp = read_keypad();
-							if(__temp != 0 && __temp != '*')
-							{
-								amt[__i++] = __temp;
-								lcd_write_character_4d(__temp);
-							}
-						}
-						while(__temp != '*');
-						amt[__i] = NULL;
-
-						strcat(path, amt);
-						debug_out(path);
-
-						if(gsm_http_get(URL, path))
-						{
-							if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-							{
-								lcd_write_instruction_4d(0x80);
-								lcd_print("connected      ");
-								lcd_print("             ");
-								lcd_write_instruction_4d(0xC0);
-								lcd_print("                       ");
-								xSemaphoreGive(displaySema);
-							}
-							http_read_data(&modem);		
-
-							if(strstr(modem.httpdata, "success"))
-							{
-								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-								{
-									lcd_write_instruction_4d(0x80);
-									lcd_print("TRANSACTION       ");
-									lcd_print("             ");
-									lcd_write_instruction_4d(0xC0);
-									lcd_print("SUCCESS                ");
-									xSemaphoreGive(displaySema);
-								}								
-							}	
-							else if(strstr(modem.httpdata, "insuffi"))
-							{
-								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-								{
-									lcd_write_instruction_4d(0x80);
-									lcd_print("TRANSACTION       ");
-									lcd_print("             ");
-									lcd_write_instruction_4d(0xC0);
-									lcd_print("BAL IS LOW       ");
-									xSemaphoreGive(displaySema);
-								}	
-							}
-							else
-							{
-								if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-								{
-									lcd_write_instruction_4d(0x80);
-									lcd_print("TRANSACTION       ");
-									lcd_print("             ");
-									lcd_write_instruction_4d(0xC0);
-									lcd_print("ERROR             ");
-									xSemaphoreGive(displaySema);
-								}									
-							}
-						}
-					}
-
-
-					/*if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-					{
-						lcd_write_instruction_4d(0x80);
-						lcd_print("OPTIONS           ");
-						lcd_print("             ");
-						lcd_write_instruction_4d(0xC0);
-						lcd_print("1.BQ, 2.PB, 3.TR  ");
-						xSemaphoreGive(displaySema);
-					}*/
-					
-
-					next:
-					if(gsm_tcp_disconnect())
-					{
-						if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-						{
-							debug_out("DISCONNECT OK\r\n");
-							xSemaphoreGive(debugSema);
-						}	
-					}
-					else
-					{
-						if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-						{
-							debug_out("DISCONNECT OK\r\n");
-							xSemaphoreGive(debugSema);
-						}	
-					}
-				}
-
-				else
-	        	{
-					if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
-					{
-						debug_out("HTTP FAIL\r\n");
-						xSemaphoreGive(debugSema);
-					}
-	        	}
-
-	        	vTaskDelay(500);
-
-				if( xSemaphoreTake( displaySema, ( portTickType ) 10 ) == pdTRUE )
-				{
-					lcd_write_instruction_4d(0x01);
-					lcd_write_instruction_4d(0x80);
-					lcd_print("    WELCOME           ");
-					xSemaphoreGive(displaySema);
-				}	
-		  
-	        	
-	        	/* wait for modem semaphore */
-	        	// if(xSemaphoreTake(modemSema, (portTickType) 10) == pdTRUE)
-	        	// {
-	        	// 	/* got resource */
-
-	        	// 	 send card number to server and get validation result 
-	        		
-
-	        	// }
-	        	// else
-	        	// {
-	        	// 	/* resource busy */
-	        	// }
-			}
-			else
-				modem_flush_rx();
-		}
-	}
+	        }
+	    }
 }
 
 
@@ -1061,6 +635,86 @@ static void scanCard(void * pvParameters)
 
 		xQueueSend( httpQueue, ( void * ) rfid, ( portTickType ) 10 );
 	}	
+}
+
+char * __Addresses[] = {"40DC8B6D", "40BF8CAD", "40DC8B76"};
+
+void setAddress(char * addr)
+{
+	zigbee_out("+++");
+    if( xSemaphoreTake( debugSema, ( portTickType ) 50 ) == pdTRUE )
+	{
+		debug_out("HTTP OK\r\n");
+		xSemaphoreGive(debugSema);
+	}
+	uart0_readline();
+	uart0_out(uart0_fifo.line);
+	uart0_out("ATDL ");
+	uart0_out(addr);
+	uart0_out("\r");
+	uart0_readline();
+	debug_out(uart0_fifo.line);
+	uart0_out("ATCN\r");
+	uart0_readline();
+	debug_out(uart0_fifo.line);
+}
+
+
+static void monZigbee(void * pvParameters)
+{
+uint8_t test_flag = 0;
+debug_out("zigbee started\r\n");
+for(;;)
+{
+setAddress(__Addresses[0]);
+if(db0.d_state == 0)
+{
+LPC_GPIO1->FIOSET |= (1 << 19);
+uart0_putc('b');
+// Send 'OFF' to NodeA
+debug_out("0 OFF\r\n");
+}
+else
+{
+LPC_GPIO1->FIOCLR |= (1 << 19);
+uart0_putc('a');
+// Send 'ON' to NodeA
+debug_out("0 ON\r\n");
+}
+_delay_ms(300);
+setAddress(__Addresses[1]);
+if(db1.d_state == 0)
+{
+LPC_GPIO1->FIOSET |= (1 << 22);
+// Send 'OFF' to NodeB
+uart0_putc('b');
+debug_out("1 OFF\r\n");
+}
+else
+{
+LPC_GPIO1->FIOCLR |= (1 << 22);
+// Send 'ON' to NodeB
+uart0_putc('a');
+debug_out("1 ON\r\n");
+}
+_delay_ms(300);
+setAddress(__Addresses[2]);
+if(db2.d_state == 0)
+{
+LPC_GPIO1->FIOSET |= (1 << 21);
+// Send 'OFF' to NodeC
+uart0_putc('b');
+debug_out("3 OFF\r\n");
+}
+else
+{
+LPC_GPIO1->FIOCLR |= (1 << 21);
+uart0_putc('a');
+// Send 'ON' to NodeC
+debug_out("3 ON\r\n");
+}
+vTaskDelay(1000);
+}
 }
 
 

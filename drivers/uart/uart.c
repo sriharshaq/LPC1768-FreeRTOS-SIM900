@@ -119,7 +119,7 @@
 		{
 			char c = '\0';
 			char i = 0;
-			while(c != LF)
+			while(c != CR)
 			{
 				if(uart0_fifo.num_bytes > 0){
 					c = uart0_getc();
