@@ -22,7 +22,13 @@ INC = 	-Idevice \
 		-Ikernel/portable/GCC/ARM_CM3 \
 		-Iconfig \
 		-Ilibrary/jsmn \
-		-Idrivers \
+		-Idrivers/delay \
+		-Idrivers/gsm \
+		-Idrivers/keypad \
+		-Idrivers/lcd \
+		-Idrivers/misc \
+		-Idrivers/uart \
+		-Idrivers/zigbee \
 		-Iapp
 
 # Search paths (For sources and libs)
@@ -36,12 +42,22 @@ VPATH = device: \
 		kernel/portable/GCC/ARM_CM3: \
 		kernel/portable/MemMang: \
 		library/jsmn: \
-		drivers: \
-		app
+		drivers/delay: \
+		drivers/gsm: \
+		drivers/keypad: \
+		drivers/lcd: \
+		drivers/misc: \
+		drivers/uart: \
+		drivers/zigbee: \
+		app:\
+		app/boot: \
+		app/process
 
 # Object Files
-OBJS	=	main.o \
-			uart.o misc.o lcd.o delay.o gsm.o keypad.o \
+OBJS	=	main.o boot.o \
+			process_connection.o process_display.o process_http.o process_zigbee.o \
+			uart.o misc.o lcd.o delay.o keypad.o zigbee.o \
+			apn.o common.o http.o opr.o pdp.o ping.o rssi.o sms.o tcp.o nw.o \
 			list.o queue.o tasks.o timers.o port.o heap_2.o \
 			lpc17xx.o system_LPC17xx.o \
 			_errno.o _exit.o _fclose.o _fopen.o _free.o _kill.o _malloc.o _open.o _write.o \
@@ -221,6 +237,21 @@ clean: 	$(OBJS)
 ##################### App Files ########################################
 main.o: main.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
+
+boot.o: boot.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+process_connection.o: process_connection.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+process_display.o: process_display.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+process_http.o: process_http.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+process_zigbee.o: process_zigbee.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
 ########################################################################
 
 # KERNEL FILES:
@@ -258,10 +289,40 @@ lcd.o: lcd.c
 delay.o: delay.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
 
-gsm.o: gsm.c
+keypad.o: keypad.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
 
-keypad.o: keypad.c
+zigbee.o: zigbee.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+apn.o: apn.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+common.o: common.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+http.o: http.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+opr.o: opr.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+pdp.o: pdp.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+ping.o: ping.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+rssi.o: rssi.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+sms.o: sms.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+tcp.o: tcp.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+nw.o: nw.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
 ########################################################################
 

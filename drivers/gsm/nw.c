@@ -1,3 +1,4 @@
+
 #include "stdint.h"
 #include "stdlib.h"
 #include "uart.h"
@@ -12,92 +13,82 @@
 #include "string.h"
 #include "config.h"
 
-/** @brief 		Send AT+CSQ to modem and get the signal strength stores result in struct
+/** @brief 		Send AT+CSTT? to modem and gets the accesspoint name (After success it fills name to struct->getapn)
  *  @param 		Modem_Type_t
  *  @return 	int8_t
  */
-int8_t gsm_get_rssi(void)
+int8_t gsm_get_network_reg_state(void)
 {
 	uint16_t len, resp;
 
-	/* write AT+CIPSTATUS to modem */
-	modem_out("AT+CSQ\r");
+	/* send AT+CSTT? to modem */
+	modem_out("AT+CREG?\r");
 
-	/* read 1st line it should be blank */
+	/* read 1st line and it should be blank */
 	len 	= modem_readline();
 	resp 	= process_response(uart3_fifo.line,len);
 
-	/* check for blank if not return error */
+	/* check for blank if not returns error */
 	if(resp != __LINE_BLANK)
 	{
 		modem_flush_rx();
 		return __MODEM_LINE_NOT_BLANK;
 	}
 
-	/* read 2nd line it should be contain data */
+	/* read 2nd line it should have __DATA */
 	len 	= modem_readline();
 	resp 	= process_response(uart3_fifo.line,len);
 
-	/* check whether response is data? */
 	if(resp != __LINE_DATA)
 	{
 		modem_flush_rx();
 		return __MODEM_LINE_NOT_DATA;
 	}
+	
+	/*  search for characters to parse apn name 
+		example line: <CR><LF>+CREG: 0,1
+	*/
+	char * __comma = memchr(uart3_fifo.line, ',', len) + 1;
 
-	char * __next;
-	char * __index = index(uart3_fifo.line, ':');
-
-	/* check for result and returns error */
-	if(__index == NULL)
+	if(__comma == NULL)
 	{
 		modem_flush_rx();
 		return __MODEM_LINE_CS_ERROR;
 	}
 
-	/* +2 for removing :<space> */
-	__index += 2;
-
-	int8_t rssi = strtol(__index, &__next, 10);
-
-	if(rssi == -1)
-	{
-		modem_flush_rx();
-		return __MODEM_LINE_PARSE_ERROR;
-	}
-
-	modem.rssi = rssi;
+	char * next;
+	modem.nw_reg = strtol(__comma, &next, 10);
 
 	/* read 3rd line it should be blank */
 	len 	= modem_readline();
 	resp 	= process_response(uart3_fifo.line,len);
 
-	// check whether blank line
+	/* check for blank if not returns error */
 	if(resp != __LINE_BLANK)
 	{
 		modem_flush_rx();
 		return __MODEM_LINE_NOT_BLANK;
 	}
 
-
-	/* read 3rd line it should be 'OK' */
+	/* read 4th line it should contain 'OK' */
 	len 	= modem_readline();
 	resp 	= process_response(uart3_fifo.line,len);
 
-	/* check for __OTHER */
+	/* check for __OTHER if not found return error */
 	if(resp != __LINE_OTHER)
 	{
 		modem_flush_rx();
 		return __MODEM_LINE_NOT_OTHER;
 	}
 
-	/* check for 'OK' */
+	/* search for 'OK' */
 	if(strstr(uart3_fifo.line, "OK"))
 	{
 		modem_flush_rx();
 		return __LINE_PARSE_SUCCESS;
 	}
 
+	/* otherwise returns error */
 	modem_flush_rx();
 	return __MODEM_LINE_NOT_OK;
 }

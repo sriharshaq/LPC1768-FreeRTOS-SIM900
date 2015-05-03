@@ -92,9 +92,12 @@ void lcd_init(void)
 	_delay_us(80);
 }
 
-void lcd_print(uint8_t * buff)
+/* flag -> 0 wont clear till end of line
+			1 clear till end of line */
+void lcd_print(uint8_t * buff, uint8_t flag)
 {
-	for(uint8_t i = 0;buff[i] != '\0';i++)
+	uint8_t i;
+	for(i = 0;buff[i] != '\0';i++)
 	{
 		if( (buff[i] != '\r') && (buff[i] != '\n') ){
 			lcd_write_character_4d(buff[i]);
@@ -102,4 +105,41 @@ void lcd_print(uint8_t * buff)
 		}
 		
 	}
+	if(flag)
+	{
+		if(i <= 16)
+		{
+			while(i <= 16)
+			{
+				lcd_write_character_4d(' ');
+				i++;
+			}
+		}
+	}
+}
+
+void lcd_clearline(uint8_t line)
+{
+	if(line == 0)
+	{
+		lcd_write_instruction_4d(0x80);
+		for(uint8_t i = 0;i <= 16;i++)
+			lcd_write_character_4d(' ');
+	}
+	else
+	{
+		lcd_write_instruction_4d(0xC0);
+		for(uint8_t i = 0;i <= 16;i++)
+			lcd_write_character_4d(' ');
+	}
+}
+
+void lcd_set_xy(uint8_t x, uint8_t y)
+{
+	if(y == 0)
+		lcd_write_instruction_4d(0x80 + x);
+	else if(y == 1)
+		lcd_write_instruction_4d(0xC0 + x);
+	else
+		lcd_write_instruction_4d(0x80);
 }

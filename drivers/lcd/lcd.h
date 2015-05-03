@@ -11,6 +11,8 @@
 
 #define EN_TRIGGER_DELAY 20
 
+#define lcd_clearscreen() lcd_write_instruction_4d(0x01)
+
 // LCD instructions
 #define lcd_Clear           0b00000001          // replace all characters with ASCII 'space'
 #define lcd_Home            0b00000010          // return cursor to first position on first line
@@ -27,6 +29,7 @@ extern void lcd_init(void);
 extern void lcd_write_4(uint8_t);
 extern void lcd_write_instruction_4d(uint8_t);
 extern void lcd_write_character_4d(uint8_t);
-extern void lcd_print(uint8_t *);
+extern void lcd_print(uint8_t *, uint8_t);
+extern void lcd_set_xy(uint8_t, uint8_t);
 
 #endif
