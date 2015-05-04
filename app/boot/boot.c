@@ -73,7 +73,7 @@ uint8_t system_boot(void)
 	_delay_ms(100);
 
 	/* ping modem for 100 times */
-	for(uint8_t i = 1;i < 5;i++)
+	for(uint8_t i = 1;i < 11;i++)
 	{
 		if(gsm_ping_modem())
 		{
@@ -82,37 +82,6 @@ uint8_t system_boot(void)
 			lcd_print(buff, 0);
 			j++;
 		}	
-	}
-
-	lcd_set_xy(0,0);
-	lcd_print("pinging xbee", 1);
-	lcd_set_xy(0, 1);
-	lcd_print("PING: ", 1);
-
-	lcd_write_character_4d(0 + 48);
-
-	j = 0;
-	_delay_ms(100);
-
-	/* ping modem for 100 times */
-	for(uint8_t i = 1;i < 3;i++)
-	{
-		if(ping_zigbee())
-		{
-			lcd_set_xy(sizeof("PING: "), 1);
-			sprintf(buff, "%d", i);
-			lcd_print(buff, 0);
-			j++;
-			_delay_ms(100);
-		}	
-	}
-
-	/* check whether ping is failed */
-	if(j == 0)
-	{
-		lcd_set_xy(0, 1);
-		lcd_print("xbee ping failed", 1);
-		return 0;
 	}
 
 	_delay_ms(100);
@@ -142,7 +111,7 @@ uint8_t system_boot(void)
 		return 0;
 	}
 
-	_delay_ms(100);
+	_delay_ms(50);
 
 	/* check the operator */
 	lcd_set_xy(0, 1);
@@ -162,7 +131,7 @@ uint8_t system_boot(void)
 		return 0;
 	}
 
-	_delay_ms(100);
+	_delay_ms(50);
 
 	lcd_set_xy(0, 1);
 	lcd_print("checking signal",1);
@@ -178,7 +147,7 @@ uint8_t system_boot(void)
 		return 0;
 	}
 
-	_delay_ms(100);
+	_delay_ms(50);
 
 
 	lcd_set_xy(0, 1);

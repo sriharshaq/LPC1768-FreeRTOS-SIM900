@@ -21,82 +21,50 @@
 
 void process_http(void * pvParameters)
 {
-	debug_out("http started\r\n");
-	uint8_t count = 1;
-	char path[32];
-	char buff[20];
-
-	device * __device;
+	char dat[50];
+	uint8_t msg;
+	int32_t _weight;
 	for(;;)
 	{
-		if(xSemaphoreTake(modemFlag, (portTickType) 10 ) == pdTRUE)
+		if( xQueueReceive( httpQueue, &( _weight ), ( portTickType ) 10 ) )
 		{
-			if(gsm_get_tcpstatus())
-			{
-				strtolower(modem.tcpstatus);
-				if(	strstr(modem.tcpstatus, "ip status") 	|| 
-					strstr(modem.tcpstatus, "tcp closed") 	|| 
-					strstr(modem.tcpstatus, "connect ok") 	|| 
-					strstr(modem.tcpstatus, "ip gprsact")
-				  )
+			if(xSemaphoreTake(modemFlag, (portTickType) 1000) == pdTRUE)
+			{	
+				/* send to http */
+				if(gsm_get_tcpstatus())
 				{
-					debug_out("http get\r\n");
-					//count++;
-
-					bzero(path,30);
-					sprintf(buff, "%d", count);
-					strcpy(path, BASE);
-					strcat(path, buff);
-
-					if(gsm_http_get(URL,path))
+					strtolower(modem.tcpstatus);
+					if(	strstr(modem.tcpstatus, "ip status") 	|| 
+						strstr(modem.tcpstatus, "tcp closed") 	|| 
+						strstr(modem.tcpstatus, "connect ok") 	|| 
+						strstr(modem.tcpstatus, "ip gprsact")
+					  )
 					{
-						debug_out("connected\r\n");
-						http_read_data();
+						debug_out("http put\r\n");
+						bzero(dat,50);
+						sprintf(dat, "{\"w_val\":%d}", _weight);
 
-						debug_out("data\r\n");
-						debug_out(modem.httpdata);
+						msg = 0;
+						xQueueSend( msgQueue, ( void * ) &msg, ( portTickType ) 0 );
 
-						if(gsm_tcp_disconnect())
+						if(gsm_http_put(URL, BASE, dat))
 						{
-							debug_out("tcp closed\r\n");
-							xSemaphoreGive(modemFlag);
-						}							
-
-						if(strlen(modem.httpdata) > 0)
-						{
-							char * __index  = strstr(modem.httpdata, "\"d_state\":");
-							if(__index)
+							msg = 1;
+							xQueueSend( msgQueue, ( void * ) &msg, ( portTickType ) 0 );
+							debug_out("http put ok\r\n");
+							http_read_data();
+							debug_out(modem.httpdata);
+							if(gsm_tcp_disconnect())
 							{
-								char * next;
-								__index += sizeof("\"d_state\"");
-								uint8_t result = strtol(__index, &next, 10);
-								sprintf(buff, "state: %d\r\n", result);
-								debug_out(buff);
-
-								__device = &_device;
-
-								__device->deviceid 		= count;
-								__device->devicestate 	= result;
-								xQueueSend( lcdQueue, ( void * ) &__device, ( portTickType ) 0 );
-								xQueueSend( xbeeQueue, ( void * ) &__device, ( portTickType ) 0 );
-							}
+								msg = 2;
+								xQueueSend( msgQueue, ( void * ) &msg, ( portTickType ) 0 );
+								debug_out("tcp closed\r\n");
+								xSemaphoreGive(modemFlag);
+							}							
 						}
-
 					}
-
-					if(count >= 3)
-					{
-						count = 1;
-					}
-					else
-						count++;							
 				}
 			}
-		}
-		else
-		{
-			modem_flush_rx();
-			vTaskDelay(1000);
 		}
 	}
 }

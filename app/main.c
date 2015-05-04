@@ -28,19 +28,21 @@ extern uint8_t system_boot(void);
 /* task handles */
 xTaskHandle 		connectionTaskHandle;
 xTaskHandle 		displayTaskHandle;
-xTaskHandle 		zigbeeTaskHandle;
+xTaskHandle 		weighingScaleTaskHandle;
 xTaskHandle 		httpTaskHandle;
+xTaskHandle 		smsTaskHandle;
 
 /* semaphores */
 xSemaphoreHandle 	lcdFlag;
 xSemaphoreHandle	modemFlag;
-xSemaphoreHandle	zigbeeFlag;
+xSemaphoreHandle	weightFlag;
 
 /* Queues */
 xQueueHandle lcdQueue;
-xQueueHandle xbeeQueue;
+xQueueHandle smsQueue;
+xQueueHandle httpQueue;
+xQueueHandle msgQueue;
 
-device * _device;
 
 int main(void)
 {
@@ -50,7 +52,7 @@ int main(void)
 		/* create semaphores */
 		lcdFlag 	= xSemaphoreCreateMutex();
 		modemFlag 	= xSemaphoreCreateMutex();
-		zigbeeFlag	= xSemaphoreCreateMutex();
+		weightFlag	= xSemaphoreCreateMutex();
 
 		xTaskCreate(process_connection , 
 					( signed char * ) "connection", 
@@ -66,15 +68,17 @@ int main(void)
 					tskIDLE_PRIORITY, 
 					&displayTaskHandle );
 
-		xTaskCreate(process_zigbee , 
-					( signed char * ) "zigbee", 
+		xTaskCreate(process_weight , 
+					( signed char * ) "weight", 
 					configMINIMAL_STACK_SIZE, 
 					( void * ) NULL, 
 					tskIDLE_PRIORITY, 
-					&zigbeeTaskHandle );
+					&weighingScaleTaskHandle );
 
-		lcdQueue  = xQueueCreate(10, sizeof(_device));
-		xbeeQueue = xQueueCreate(10, sizeof(_device));
+		lcdQueue  	= xQueueCreate(10, sizeof(int32_t));
+		httpQueue 	= xQueueCreate(10, sizeof(int32_t));
+		smsQueue 	= xQueueCreate(10, sizeof(int32_t));
+		msgQueue	= xQueueCreate(5, sizeof(uint8_t));
 
 		/* start the scheduler */
 		vTaskStartScheduler();	

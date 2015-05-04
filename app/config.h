@@ -2,6 +2,8 @@
 #ifndef __config_h__
 #define __config_h__
 
+#define __NUM "8861453145"
+
 #define __UART0_BAUDRATE 9600
 #define __UART1_BAUDRATE 9600
 #define __UART3_BAUDRATE 9600

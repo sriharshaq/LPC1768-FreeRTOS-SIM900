@@ -29,6 +29,7 @@ INC = 	-Idevice \
 		-Idrivers/misc \
 		-Idrivers/uart \
 		-Idrivers/zigbee \
+		-Idrivers/weight \
 		-Iapp
 
 # Search paths (For sources and libs)
@@ -49,14 +50,15 @@ VPATH = device: \
 		drivers/misc: \
 		drivers/uart: \
 		drivers/zigbee: \
+		drivers/weight: \
 		app:\
 		app/boot: \
 		app/process
 
 # Object Files
 OBJS	=	main.o boot.o \
-			process_connection.o process_display.o process_http.o process_zigbee.o \
-			uart.o misc.o lcd.o delay.o keypad.o zigbee.o \
+			process_connection.o process_display.o process_http.o process_weight.o process_sms.o \
+			uart.o misc.o lcd.o delay.o keypad.o weight.o \
 			apn.o common.o http.o opr.o pdp.o ping.o rssi.o sms.o tcp.o nw.o \
 			list.o queue.o tasks.o timers.o port.o heap_2.o \
 			lpc17xx.o system_LPC17xx.o \
@@ -252,6 +254,12 @@ process_http.o: process_http.c
 
 process_zigbee.o: process_zigbee.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
+
+process_weight.o: process_weight.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+process_sms.o: process_sms.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
 ########################################################################
 
 # KERNEL FILES:
@@ -293,6 +301,9 @@ keypad.o: keypad.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
 
 zigbee.o: zigbee.c
+	$(CC)gcc $(CFLAGS) $^ -o $@
+
+weight.o: weight.c
 	$(CC)gcc $(CFLAGS) $^ -o $@
 
 apn.o: apn.c

@@ -21,13 +21,19 @@
 void process_connection(void * pvParameters)
 {
 
-
 	xTaskCreate(process_http , 
 				( signed char * ) "http", 
 				configMINIMAL_STACK_SIZE, 
 				( void * ) NULL, 
 				tskIDLE_PRIORITY, 
 				&httpTaskHandle );
+
+	xTaskCreate(process_sms , 
+				( signed char * ) "sms", 
+				configMINIMAL_STACK_SIZE, 
+				( void * ) NULL, 
+				tskIDLE_PRIORITY, 
+				&smsTaskHandle );
 
 	uint8_t taskFlag = 0;
 
@@ -119,18 +125,10 @@ void process_connection(void * pvParameters)
 						}
 					}
 				}
-				/*else if(strstr(modem.tcpstatus, "tcp connecting"))
-				{
-					debug_out("connecting\r\n");
-				}*/
 				else if(strstr(modem.tcpstatus, "tcp connected"))
 				{
 					debug_out("connected\r\n");
 				}
-				/*else if(strstr(modem.tcpstatus, "tcp closing"))
-				{
-					debug_out("closing\r\n");
-				}*/
 				else if(strstr(modem.tcpstatus, "connect ok"))
 				{
 					debug_out("connect ok\r\n");
@@ -180,11 +178,6 @@ void process_connection(void * pvParameters)
 						}
 					}						
 				}
-				/*else
-				{
-					debug_out(modem.tcpstatus);
-					debug_out("\r\n");
-				}*/
 			}			
 		}
 		vTaskDelay(1000);

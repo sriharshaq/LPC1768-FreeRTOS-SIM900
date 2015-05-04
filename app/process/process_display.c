@@ -21,7 +21,10 @@
 void process_display(void * pvParameters)
 {
 	uint8_t count = 0;
-	device * __device;
+	int32_t _weight;
+	uint8_t msg;
+	char 	buff[20];
+	int32_t __weight = -111;
 	for(;;)
 	{
 		if(xSemaphoreTake(lcdFlag, (portTickType) 10 ) == pdTRUE)
@@ -62,35 +65,68 @@ void process_display(void * pvParameters)
 						lcd_set_xy(0,1);
 						lcd_print(modem.ip_addr,1);
 						break;
-				/*case 5: lcd_set_xy(0,0);
-						lcd_print("xbee mac addr",1);
-						lcd_set_xy(0,1);
-						lcd_print(modem.ip_addr,1);
-						break;*/
+				case 5: if(__weight != -111){
+							sprintf(buff, "%d g", _weight);
+							lcd_set_xy(0,0);
+							lcd_print("weight",1);
+							lcd_set_xy(0,1);
+							lcd_print(buff,1);
+							break;
+				}
+						
 
 			}
 			xSemaphoreGive(lcdFlag);
 			count++;
-			if(count > 4){
+			if(count > 5){
 				count = 0;	
 			}
 
 			if( lcdQueue != 0 )
     		{
-    			//__device = &_device;
-        		if( xQueueReceive( lcdQueue, &( __device ), ( portTickType ) 10 ) )
+        		if( xQueueReceive( lcdQueue, &( _weight ), ( portTickType ) 10 ) )
         		{
+        			__weight = _weight;
+        			sprintf(buff, "%d", _weight);
         			lcd_set_xy(0,0);
-        			lcd_print("device: ", 1);
-        			lcd_set_xy(sizeof("device: "), 0);
-        			lcd_write_character_4d(__device->deviceid + 48);
+        			lcd_print("    WEIGHT   ", 1);
         			lcd_set_xy(0,1);
-        			lcd_print("status: ", 1);
-        			lcd_set_xy(sizeof("status: "), 1);
-        			lcd_write_character_4d(__device->devicestate + 48);
+        			lcd_print(buff, 0);
+        			lcd_write_character_4d(' g');
+        			lcd_print("                     ", 0);
        			}
        		}
-			vTaskDelay(1000);		
+
+			if( msgQueue != 0 )
+    		{
+        		if( xQueueReceive( msgQueue, &( msg ), ( portTickType ) 10 ) )
+        		{
+        			lcd_set_xy(0,0);
+        			lcd_print("    INFO     ", 1);
+        			lcd_set_xy(0,1);
+        			if(msg == 0)
+        			{
+        				lcd_print("http started", 1);
+        			}
+        			else if(msg == 1)
+        			{
+        				lcd_print("http ok", 1);
+        			}
+        			if(msg == 2)
+        			{
+        				lcd_print("tcp disconnect", 1);
+        			}
+        			if(msg == 3)
+        			{
+        				lcd_print("sending sms", 1);
+        			}
+        			if(msg == 4)
+        			{
+        				lcd_print("sms sent", 1);
+        			}
+       			}
+       		}
+			vTaskDelay(300);		
 		}	
 		vTaskDelay(1);
 	}
